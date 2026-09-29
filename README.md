@@ -1,0 +1,775 @@
+[index painel.html](https://github.com/user-attachments/files/32817554/index.painel.html)
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>MMADV · Ranking da Equipe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <!-- PapaParse para Google Sheets -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    /* ── TOKENS ─────────────────────────────────────────── */
+    :root {
+      --bg:    #06101f;
+      --surf:  #0b1a2e;
+      --surf2: #0e2040;
+      --bord:  rgba(197,162,74,.13);
+      --bord2: rgba(197,162,74,.32);
+      --gold:  #C5A24A;
+      --goldl: #f0c96a;
+      --goldd: #7a6020;
+      --text:  #e8f0fa;
+      --muted: #6a85ab;
+      --m1:    #FFD700;
+      --m2:    #C0C0C0;
+      --m3:    #CD7F32;
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top,0px);
+      padding-bottom: env(safe-area-inset-bottom,0px);
+    }
+    *,*::before,*::after{box-sizing:inherit;margin:0;padding:0;}
+    html,body{height:100%;}
+    body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;min-height:100vh;}
+
+    /* ── HEADER ─────────────────────────────────────────── */
+    .hd{
+      position:sticky;top:0;z-index:200;
+      background:linear-gradient(135deg,#0b1a2e 0%,#0e2040 50%,#0b1a2e 100%);
+      border-bottom:1px solid var(--bord);
+      padding:14px 20px;
+      display:flex;align-items:center;flex-wrap:wrap;gap:10px;
+    }
+    .hd-brand{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+    .hd-logo{
+      width:42px;height:42px;border-radius:10px;flex-shrink:0;
+      background:linear-gradient(135deg,var(--goldd) 0%,var(--gold) 60%,var(--goldl) 100%);
+      display:flex;align-items:center;justify-content:center;
+      font-family:'Montserrat',sans-serif;font-weight:900;font-size:14px;color:#040d19;letter-spacing:-.5px;
+    }
+    .hd-name{font-family:'Montserrat',sans-serif;font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .hd-sub{font-size:10px;color:var(--muted);letter-spacing:.04em;}
+    .hd-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .live-dot{
+      display:flex;align-items:center;gap:5px;
+      font-size:10px;color:var(--muted);
+      padding:4px 10px;border-radius:20px;
+      border:1px solid var(--bord);background:var(--surf2);
+    }
+    .dot{width:7px;height:7px;border-radius:50%;background:#4ade80;}
+    .dot.off{background:#ef4444;animation:none;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+    .dot.on{animation:pulse 1.6s ease-in-out infinite;}
+    .period-sel{
+      background:var(--surf2);border:1px solid var(--bord2);
+      color:var(--gold);padding:7px 11px;border-radius:8px;
+      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;
+      cursor:pointer;outline:none;max-width:160px;
+    }
+    .period-sel:focus{border-color:var(--gold);}
+    .btn-refresh{
+      background:linear-gradient(135deg,var(--goldd) 0%,var(--gold) 100%);
+      border:none;color:#040d19;padding:8px 14px;border-radius:8px;
+      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;
+      cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .18s;
+    }
+    .btn-refresh:hover{opacity:.85;}
+    .btn-refresh:disabled{opacity:.45;cursor:not-allowed;}
+    .ref-ico{display:inline-block;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .spinning{animation:spin .7s linear infinite;}
+    .hd-ts{font-size:10px;color:var(--muted);white-space:nowrap;width:100%;}
+
+    /* ── TABS ────────────────────────────────────────────── */
+    .tabs{
+      display:flex;
+      background:var(--surf);border-bottom:1px solid var(--bord);
+      overflow-x:auto;scrollbar-width:none;padding:0 12px;
+    }
+    .tabs::-webkit-scrollbar{display:none;}
+    .tab{
+      padding:13px 18px;
+      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;
+      color:var(--muted);cursor:pointer;white-space:nowrap;
+      border-bottom:2px solid transparent;
+      transition:color .2s,border-color .2s;user-select:none;
+    }
+    .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .tab:hover:not(.active){color:var(--text);}
+
+    /* ── CONTENT ─────────────────────────────────────────── */
+    .content{max-width:860px;margin:0 auto;padding:20px 16px 48px;}
+    .panel{display:none;}
+    .panel.active{display:block;}
+
+    /* ── STATS ───────────────────────────────────────────── */
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px;}
+    .stat-box{background:var(--surf);border:1px solid var(--bord);border-radius:12px;padding:14px 14px 12px;text-align:center;}
+    .stat-val{font-family:'Montserrat',sans-serif;font-weight:900;font-size:20px;color:var(--gold);line-height:1.1;}
+    .stat-lbl{font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
+
+    /* ── SECTION TITLE ───────────────────────────────────── */
+    .sec-title{
+      font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;
+      letter-spacing:.1em;text-transform:uppercase;color:var(--gold);
+      padding-bottom:10px;border-bottom:1px solid var(--bord);margin-bottom:14px;
+    }
+
+    /* ── WEEK BAR ────────────────────────────────────────── */
+    .week-bar{
+      background:var(--surf);border:1px solid var(--bord);border-radius:10px;
+      padding:11px 16px;margin-bottom:14px;
+      display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+    }
+    .week-lbl{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+    .week-val{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;color:var(--gold);}
+    .week-nav{display:flex;gap:4px;}
+    .btn-week{
+      background:var(--surf2);border:1px solid var(--bord);color:var(--gold);
+      width:28px;height:28px;border-radius:6px;font-size:14px;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background .15s;user-select:none;
+    }
+    .btn-week:hover{background:var(--bord);}
+
+    /* ── RANKING ─────────────────────────────────────────── */
+    .rank-list{display:flex;flex-direction:column;gap:8px;}
+    .rank-card{
+      background:var(--surf);border:1px solid var(--bord);border-radius:14px;
+      padding:14px 16px;display:flex;align-items:center;gap:12px;
+      position:relative;overflow:hidden;
+      transition:transform .15s,border-color .15s,box-shadow .15s;
+    }
+    .rank-card:hover{transform:translateY(-2px);border-color:var(--bord2);}
+    .rank-card.r1{background:linear-gradient(135deg,rgba(255,215,0,.06) 0%,var(--surf) 60%);border-color:rgba(255,215,0,.35);box-shadow:0 0 28px rgba(255,215,0,.07);}
+    .rank-card.r2{border-color:rgba(192,192,192,.25);}
+    .rank-card.r3{border-color:rgba(205,127,50,.25);}
+    .rank-card.zero{opacity:.5;}
+    .rank-card.r1::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--m1),transparent);}
+
+    /* badge */
+    .badge{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Montserrat',sans-serif;font-weight:900;font-size:14px;}
+    .badge.p1{background:radial-gradient(circle at 40% 35%,#ffe55c,#FFD700,#b8860b);color:#5a3a00;font-size:18px;box-shadow:0 2px 8px rgba(255,215,0,.4);}
+    .badge.p2{background:radial-gradient(circle at 40% 35%,#e8e8e8,#c0c0c0,#808080);color:#303030;}
+    .badge.p3{background:radial-gradient(circle at 40% 35%,#e8a060,#CD7F32,#8b4a10);color:#4a2800;}
+    .badge.pn{background:var(--surf2);color:var(--muted);}
+
+    /* avatar */
+    .av-wrap{position:relative;flex-shrink:0;}
+    .avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2.5px solid var(--bord);display:block;}
+    .r1 .avatar{border-color:var(--m1);box-shadow:0 0 14px rgba(255,215,0,.4);}
+    .r2 .avatar{border-color:var(--m2);}
+    .r3 .avatar{border-color:var(--m3);}
+    .av-fallback{
+      width:56px;height:56px;border-radius:50%;border:2.5px solid var(--bord);
+      background:var(--surf2);display:none;
+      align-items:center;justify-content:center;
+      font-family:'Montserrat',sans-serif;font-weight:700;font-size:20px;color:var(--gold);
+    }
+    .av-fallback.show{display:flex;}
+
+    /* role chip */
+    .role-chip{
+      display:inline-block;padding:2px 8px;border-radius:20px;
+      font-size:10px;font-weight:700;letter-spacing:.04em;margin-top:2px;
+    }
+    .role-sdr{background:rgba(59,130,246,.15);color:#60a5fa;}
+    .role-social{background:rgba(168,85,247,.15);color:#c084fc;}
+    .role-closer{background:rgba(197,162,74,.15);color:var(--gold);}
+
+    /* info */
+    .p-info{flex:1;min-width:0;}
+    .p-name{font-family:'Montserrat',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .bar{height:3px;background:var(--surf2);border-radius:2px;margin-top:8px;overflow:hidden;}
+    .bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--goldd),var(--gold));transition:width .9s cubic-bezier(.4,0,.2,1);width:0%;}
+    .r1 .bar-fill{background:linear-gradient(90deg,#b8860b,var(--m1));}
+
+    /* metric */
+    .p-metric{text-align:right;flex-shrink:0;}
+    .m-val{font-family:'Montserrat',sans-serif;font-weight:900;font-size:15px;color:var(--text);}
+    .r1 .m-val{color:var(--m1);}
+    .r2 .m-val{color:var(--m2);}
+    .r3 .m-val{color:var(--m3);}
+    .m-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+
+    /* ── LOADING / EMPTY / ERROR ─────────────────────────── */
+    .empty{text-align:center;padding:50px 20px;color:var(--muted);}
+    .empty-ico{font-size:44px;margin-bottom:12px;}
+    .empty-ttl{font-family:'Montserrat',sans-serif;font-weight:700;font-size:15px;color:var(--text);margin-bottom:6px;}
+    .empty-txt{font-size:12px;line-height:1.6;max-width:340px;margin:0 auto;}
+    .loading-wrap{display:flex;flex-direction:column;align-items:center;padding:70px 20px;gap:14px;}
+    .spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--surf2);border-top-color:var(--gold);animation:spin .75s linear infinite;}
+    .loading-txt{font-size:12px;color:var(--muted);}
+    .err-box{background:rgba(229,85,85,.09);border:1px solid rgba(229,85,85,.3);border-radius:10px;padding:13px 16px;font-size:12px;color:#ff8888;line-height:1.6;margin-bottom:14px;}
+    .err-box code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-size:11px;}
+
+    /* ── STATUS PILLS (agenda) ───────────────────────────── */
+    .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;}
+    .pill-ag{background:#1e3a8a22;color:#93c5fd;}
+    .pill-re{background:#14532d22;color:#86efac;}
+    .pill-ca{background:#7f1d1d22;color:#fca5a5;}
+    .pill-ns{background:#78350f22;color:#fcd34d;}
+
+    /* ── RESPONSIVE ──────────────────────────────────────── */
+    @media(max-width:520px){
+      .hd{padding:12px 14px;}
+      .content{padding:14px 12px 40px;}
+      .rank-card{padding:12px 12px;gap:10px;}
+      .avatar,.av-fallback{width:46px;height:46px;}
+      .m-val{font-size:13px;}
+    }
+    @media(prefers-reduced-motion:reduce){
+      .rank-card{transition:none;}
+      .bar-fill{transition:none;}
+      .spinning{animation:none;}
+      .spinner{animation:none;}
+      .dot{animation:none;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════ HEADER ════════════════ -->
+<header class="hd">
+  <div class="hd-brand">
+    <div class="hd-logo">MM</div>
+    <div>
+      <div class="hd-name">Ranking da Equipe</div>
+      <div class="hd-sub">MARCONDES MADUREIRA ADVOCACIA</div>
+    </div>
+  </div>
+  <div class="hd-right">
+    <div class="live-dot" id="liveIndicator">
+      <span class="dot on" id="liveDot"></span>
+      <span id="liveLabel">Conectando…</span>
+    </div>
+    <select class="period-sel" id="monthSel" title="Selecionar mês"></select>
+    <button class="btn-refresh" id="btnRefresh" onclick="refreshAll()">
+      <span class="ref-ico" id="refIco">↻</span> Atualizar
+    </button>
+  </div>
+  <div class="hd-ts" id="lastTs">Aguardando dados…</div>
+</header>
+
+<!-- ════════════════ TABS ════════════════ -->
+<nav class="tabs" id="tabsNav">
+  <div class="tab active"  data-tab="closers">🏆 Closers</div>
+  <div class="tab"         data-tab="sdrs">📞 SDRs</div>
+  <div class="tab"         data-tab="social">📱 Social Sellers</div>
+  <div class="tab"         data-tab="agenda">📅 Agendamentos</div>
+</nav>
+
+<!-- ════════════════ CONTEÚDO ════════════════ -->
+<main class="content">
+
+  <!-- CLOSERS -->
+  <div class="panel active" id="panel-closers">
+    <div class="stats" id="st-closers"></div>
+    <div class="sec-title" id="ttl-closers">RANKING DE CLOSERS</div>
+    <div id="body-closers"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
+  </div>
+
+  <!-- SDRs -->
+  <div class="panel" id="panel-sdrs">
+    <div class="stats" id="st-sdrs"></div>
+    <div class="sec-title" id="ttl-sdrs">RANKING DE SDRs</div>
+    <div id="body-sdrs"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
+  </div>
+
+  <!-- SOCIAL SELLERS -->
+  <div class="panel" id="panel-social">
+    <div class="stats" id="st-social"></div>
+    <div class="sec-title" id="ttl-social">RANKING SOCIAL SELLERS</div>
+    <div id="body-social"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
+  </div>
+
+  <!-- AGENDAMENTOS (Firebase) -->
+  <div class="panel" id="panel-agenda">
+    <div class="week-bar">
+      <div>
+        <div class="week-lbl">📅 Semana de referência</div>
+        <div class="week-val" id="weekLabel">Calculando…</div>
+      </div>
+      <div class="week-nav">
+        <button class="btn-week" onclick="shiftWeek(-1)" title="Semana anterior">‹</button>
+        <button class="btn-week" onclick="shiftWeek(0)"  title="Semana atual">●</button>
+        <button class="btn-week" onclick="shiftWeek(1)"  title="Próxima semana">›</button>
+      </div>
+    </div>
+    <div class="stats" id="st-agenda"></div>
+    <div class="sec-title">QUEM MAIS AGENDOU NA SEMANA</div>
+    <div id="body-agenda"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Conectando ao Firebase…</div></div></div>
+  </div>
+
+</main>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   CONFIGURAÇÃO
+═══════════════════════════════════════════════════════════ */
+const CFG = {
+  /* Google Sheets — Vendas */
+  SALES_SHEET_ID:   '1KxhE62RLnjrCd5aPuwQAChcCXIJddATF75P-FLL3Whc',
+  SALES_SHEET_NAME: 'Base',
+  C_SDR:    'SDR?',
+  C_CLOSER: 'CLOSER?',
+  C_VALUE:  'VALOR TOTAL CONTRATADO',
+  C_MONTH:  'MES',
+  C_YEAR:   'ANO',
+  C_SOCIAL: 'Social Selling',
+
+  /* Times — Vendas (Google Sheets) */
+  CLOSERS:       ['Malu','Léo','Laís','Franklin','Júlia'],
+  SDRS:          ['Kelly','Izabel','Camila'],
+  SOCIAL_SELLERS:['Layla','Vanessa'],
+
+  /* Times — Agendamentos (Firebase) */
+  AG_SDR:    ['Izabel','Kelly','Laís','Júlia'],
+  AG_SOCIAL: ['Daniel','Camila','Layla','Vanessa'],
+
+  /* Fotos */
+  PHOTOS: {
+    'Malu':    'img/malu-prado.png',
+    'Léo':     'img/leo-marcondes.png',
+    'Laís':    'img/lais-pena.png',
+    'Franklin':'img/franklin-marques.png',
+    'Júlia':   'img/julia-borges.png',
+    'Kelly':   'img/kelly-cardoso.png',
+    'Izabel':  'img/izabel-lopes.png',
+    'Camila':  'img/camila-santiago.png',
+    'Layla':   'img/layla-alves.png',
+    'Vanessa': 'img/vanessa-simoes.png',
+  },
+};
+
+/* Roles visíveis nos chips */
+const ROLES = {};
+CFG.AG_SDR.forEach(n    => { ROLES[n]='SDR'; });
+CFG.AG_SOCIAL.forEach(n => { ROLES[n]='Social Seller'; });
+
+/* Firebase config do app de agendamentos */
+const FB_CFG = {
+  apiKey:            'AIzaSyDHBmGuYWptEN-UFawXtA3ROiT2NuOjC3E',
+  authDomain:        'agendamentommadv-32dae.firebaseapp.com',
+  projectId:         'agendamentommadv-32dae',
+  storageBucket:     'agendamentommadv-32dae.firebasestorage.app',
+  messagingSenderId: '32241097932',
+  appId:             '1:32241097932:web:3459dc7d8eba9d93a77669',
+};
+
+/* Normalização de nomes */
+const NORM = {
+  'Leo':'Léo','Leonardo':'Léo','leo':'Léo','Léo':'Léo',
+  'Malu':'Malu','Franklin':'Franklin',
+  'Julia':'Júlia','Júlia':'Júlia',
+  'Lais':'Laís','Laís':'Laís',
+  'Kelly':'Kelly','Izabel':'Izabel','Isabel':'Izabel',
+  'Camila':'Camila','Layla':'Layla','Vanessa':'Vanessa',
+  'Daniel':'Daniel',
+};
+
+/* ═══════════════════════════════════════════════════════════
+   ESTADO GLOBAL
+═══════════════════════════════════════════════════════════ */
+let salesData   = [];
+let meetings    = [];   // Firestore em tempo real
+let selMonth    = '';
+let selYear     = '';
+let weekOffset  = 0;    // 0=semana atual, -1=anterior, +1=próxima
+let fbUnsubscribe = null;
+
+const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const PT_MONTHS3 = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITÁRIOS
+═══════════════════════════════════════════════════════════ */
+function norm(s){ return NORM[(s||'').trim()] || (s||'').trim(); }
+
+function parseBRL(s){
+  if(!s) return 0;
+  return parseFloat((s+'').replace(/R\$\s?/g,'').replace(/\./g,'').replace(',','.').trim())||0;
+}
+function fmtBRL(v){
+  return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(v);
+}
+function fmtDateBR(d){
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+}
+
+/* Semana: segunda à domingo */
+function weekStart(offset){
+  const now = new Date();
+  now.setDate(now.getDate() + offset*7);
+  const day = now.getDay();
+  const diff = day===0 ? -6 : 1-day;
+  const mon = new Date(now); mon.setDate(now.getDate()+diff); mon.setHours(0,0,0,0);
+  return mon;
+}
+function weekEnd(offset){
+  const mon = weekStart(offset);
+  const sun = new Date(mon); sun.setDate(mon.getDate()+6); sun.setHours(23,59,59,999);
+  return sun;
+}
+function inWeek(dateStr, offset){
+  if(!dateStr) return false;
+  const d = new Date(dateStr+'T00:00:00');
+  return d >= weekStart(offset) && d <= weekEnd(offset);
+}
+function weekLabel(offset){
+  const s = weekStart(offset), e = weekEnd(offset);
+  const f = dt => `${String(dt.getDate()).padStart(2,'0')}/${PT_MONTHS3[dt.getMonth()]}`;
+  return `${f(s)} a ${f(e)}`;
+}
+
+/* Google Sheets gviz CSV */
+function gvizURL(sheetId, sheetName){
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+}
+async function fetchCSV(sheetId, sheetName){
+  const res  = await fetch(gvizURL(sheetId,sheetName),{cache:'no-store'});
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return new Promise((ok,fail)=>{
+    Papa.parse(text,{header:true,skipEmptyLines:true,
+      complete:r=>ok(r.data), error:e=>fail(e)});
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FIREBASE — inicialização e listener em tempo real
+═══════════════════════════════════════════════════════════ */
+firebase.initializeApp(FB_CFG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+function initFirebase(){
+  setLive(null,'Conectando…');
+  auth.onAuthStateChanged(user=>{
+    if(user){
+      startListener();
+    } else {
+      auth.signInAnonymously().catch(err=>{
+        setLive(false,'Erro de auth');
+        q('body-agenda').innerHTML = errHTML('Falha na autenticação Firebase: '+err.message);
+      });
+    }
+  });
+}
+
+function startListener(){
+  if(fbUnsubscribe) fbUnsubscribe();
+  fbUnsubscribe = db.collection('meetings')
+    .orderBy('createdAt','desc')
+    .onSnapshot(
+      snap=>{
+        meetings = snap.docs.map(d=>({id:d.id,...d.data()}));
+        setLive(true,'Ao vivo');
+        renderAgenda();
+        updateTs();
+      },
+      err=>{
+        setLive(false,'Desconectado');
+        q('body-agenda').innerHTML = errHTML('Firebase: '+err.message);
+      }
+    );
+}
+
+function setLive(ok, label){
+  const dot  = q('liveDot');
+  const lbl  = q('liveLabel');
+  lbl.textContent = label;
+  dot.className = 'dot '+(ok===true?'on':ok===false?'off':'');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARGA E REFRESH
+═══════════════════════════════════════════════════════════ */
+async function refreshAll(){
+  const btn=q('btnRefresh'), ico=q('refIco');
+  btn.disabled=true; ico.classList.add('spinning');
+  showSpinner('closers'); showSpinner('sdrs'); showSpinner('social');
+
+  try{
+    salesData = await fetchCSV(CFG.SALES_SHEET_ID, CFG.SALES_SHEET_NAME);
+    buildMonthSelect();
+    renderSales();
+  } catch(e){
+    const msg = fmtErr(e);
+    showErr('closers',msg); showErr('sdrs',msg); showErr('social',msg);
+  }
+
+  updateTs();
+  btn.disabled=false; ico.classList.remove('spinning');
+}
+
+function updateTs(){
+  q('lastTs').textContent = 'Atualizado em '+new Date().toLocaleTimeString('pt-BR');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SELETOR DE MÊS
+═══════════════════════════════════════════════════════════ */
+function buildMonthSelect(){
+  const pairs = new Set();
+  salesData.forEach(r=>{
+    const m=(r[CFG.C_MONTH]||'').trim(), y=(r[CFG.C_YEAR]||'').trim();
+    if(m&&y) pairs.add(`${m}|${y}`);
+  });
+  const sorted = [...pairs].sort((a,b)=>{
+    const [ma,ya]=a.split('|'), [mb,yb]=b.split('|');
+    return (+ya - +yb) || (PT_MONTHS.indexOf(ma)-PT_MONTHS.indexOf(mb));
+  });
+  const sel = q('monthSel');
+  sel.innerHTML = sorted.map(p=>{
+    const [m,y]=p.split('|');
+    return `<option value="${p}">${m} ${y}</option>`;
+  }).join('');
+  if(sorted.length){
+    const last = sorted[sorted.length-1];
+    sel.value = last;
+    [selMonth,selYear] = last.split('|');
+  }
+  sel.onchange = ()=>{ [selMonth,selYear]=sel.value.split('|'); renderSales(); };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PROCESSAMENTO DE VENDAS
+═══════════════════════════════════════════════════════════ */
+function filterSales(){
+  return salesData.filter(r=>{
+    const m=(r[CFG.C_MONTH]||'').trim(), y=(r[CFG.C_YEAR]||'').trim();
+    return m===selMonth && y===selYear;
+  });
+}
+function aggregate(rows, col, team){
+  const map={};
+  team.forEach(n=>{ map[n]={name:n,value:0,count:0}; });
+  rows.forEach(r=>{
+    const n=norm((r[col]||'').trim());
+    if(map[n]){ map[n].value+=parseBRL(r[CFG.C_VALUE]); map[n].count++; }
+  });
+  return Object.values(map).sort((a,b)=>b.value-a.value||b.count-a.count);
+}
+function aggregateSocial(rows){
+  const map={};
+  CFG.SOCIAL_SELLERS.forEach(n=>{ map[n]={name:n,value:0,count:0}; });
+  rows.forEach(r=>{
+    const n=norm((r[CFG.C_SOCIAL]||'').trim());
+    if(map[n]){ map[n].value+=parseBRL(r[CFG.C_VALUE]); map[n].count++; }
+  });
+  return Object.values(map).sort((a,b)=>b.value-a.value||b.count-a.count);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PROCESSAMENTO DE AGENDAMENTOS (Firebase)
+═══════════════════════════════════════════════════════════ */
+function aggregateAgenda(){
+  const allSchedulers = [...CFG.AG_SDR,...CFG.AG_SOCIAL];
+  const map={};
+  allSchedulers.forEach(n=>{ map[n]={name:n,total:0,realizado:0,cancelado:0,noshow:0}; });
+
+  // Filtra pela bookingDate dentro da semana selecionada
+  meetings.forEach(m=>{
+    const bookDate = m.bookingDate || (m.createdAt ? m.createdAt.slice(0,10) : '') || m.date || '';
+    if(!inWeek(bookDate, weekOffset)) return;
+    const n = norm((m.schedulerName||'').trim());
+    if(!map[n]) map[n]={name:n,total:0,realizado:0,cancelado:0,noshow:0};
+    map[n].total++;
+    if(m.status==='realizado') map[n].realizado++;
+    if(m.status==='cancelado') map[n].cancelado++;
+    if(m.status==='noshow')    map[n].noshow++;
+  });
+
+  return Object.values(map).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER — VENDAS
+═══════════════════════════════════════════════════════════ */
+function renderSales(){
+  const rows  = filterSales();
+  const label = `${selMonth} ${selYear}`;
+  q('ttl-closers').textContent = `RANKING DE CLOSERS · ${label}`;
+  q('ttl-sdrs').textContent    = `RANKING DE SDRs · ${label}`;
+  q('ttl-social').textContent  = `RANKING SOCIAL SELLERS · ${label}`;
+
+  const closers = aggregate(rows,CFG.C_CLOSER,CFG.CLOSERS);
+  const sdrs    = aggregate(rows,CFG.C_SDR,   CFG.SDRS);
+  const social  = aggregateSocial(rows);
+
+  renderStats('st-closers',[
+    {val:fmtBRL(closers.reduce((s,x)=>s+x.value,0)),lbl:'Fechado no mês'},
+    {val:closers.reduce((s,x)=>s+x.count,0),        lbl:'Contratos'},
+  ]);
+  renderStats('st-sdrs',[
+    {val:fmtBRL(sdrs.reduce((s,x)=>s+x.value,0)),lbl:'Volume gerado'},
+    {val:sdrs.reduce((s,x)=>s+x.count,0),        lbl:'Leads fechados'},
+  ]);
+  renderStats('st-social',[
+    {val:fmtBRL(social.reduce((s,x)=>s+x.value,0)),lbl:'Volume social'},
+    {val:social.reduce((s,x)=>s+x.count,0),        lbl:'Contratos'},
+  ]);
+
+  renderRanking('body-closers',closers,r=>({
+    main:fmtBRL(r.value), sub:`${r.count} contrato${r.count!==1?'s':''}`,
+  }),'value','closer');
+  renderRanking('body-sdrs',sdrs,r=>({
+    main:fmtBRL(r.value), sub:`${r.count} lead${r.count!==1?'s':''}`,
+  }),'value','sdr');
+  renderRanking('body-social',social,r=>({
+    main:r.value>0?fmtBRL(r.value):'—', sub:`${r.count} contrato${r.count!==1?'s':''}`,
+  }),'value','social');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER — AGENDAMENTOS
+═══════════════════════════════════════════════════════════ */
+function renderAgenda(){
+  q('weekLabel').textContent = weekLabel(weekOffset);
+
+  const data  = aggregateAgenda();
+  const total = data.reduce((s,x)=>s+x.total,0);
+  const real  = data.reduce((s,x)=>s+x.realizado,0);
+
+  renderStats('st-agenda',[
+    {val:total, lbl:'Agendamentos na semana'},
+    {val:real,  lbl:'Realizados'},
+    {val:data.filter(x=>x.total>0).length, lbl:'Agendadores ativos'},
+  ]);
+
+  renderRanking('body-agenda',data,r=>({
+    main:`${r.total} agend.`,
+    sub: r.realizado>0 ? `${r.realizado} realizado${r.realizado!==1?'s':''}` : `0 realizados`,
+  }),'total','agenda');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER HELPERS
+═══════════════════════════════════════════════════════════ */
+function renderStats(id,items){
+  q(id).innerHTML = items.map(i=>`
+    <div class="stat-box">
+      <div class="stat-val">${i.val}</div>
+      <div class="stat-lbl">${i.lbl}</div>
+    </div>`).join('');
+}
+
+function renderRanking(id,data,metricFn,sortKey,context){
+  const el = q(id);
+  if(!data.length){
+    el.innerHTML=emptyHTML('Sem dados','Nenhum registro encontrado para este período.');
+    return;
+  }
+
+  const MEDALS=['🥇','🥈','🥉'];
+  const maxVal = (data[0]||{})[sortKey]||1;
+
+  const html = data.map((r,i)=>{
+    const pos    = i+1;
+    const rClass = pos<=3?`r${pos}`:'';
+    const bClass = pos<=3?`p${pos}`:'pn';
+    const medal  = MEDALS[i]||pos;
+    const pct    = maxVal>0 ? Math.round(((r[sortKey]||0)/maxVal)*100) : 0;
+    const m      = metricFn(r);
+    const photo  = CFG.PHOTOS[r.name];
+    const isZero = (r[sortKey]||0)===0;
+
+    // role chip
+    const role = ROLES[r.name];
+    let roleChip = '';
+    if(context==='agenda' && role){
+      const cls = role==='SDR'?'role-sdr':'role-social';
+      roleChip = `<span class="role-chip ${cls}">${role}</span>`;
+    }
+
+    return `
+      <div class="rank-card ${rClass}${isZero?' zero':''}">
+        <div class="badge ${bClass}">${medal}</div>
+        <div class="av-wrap">
+          ${photo
+            ? `<img class="avatar" src="${photo}" alt="${r.name}"
+                    onerror="this.style.display='none';this.nextElementSibling.classList.add('show')"/>
+               <div class="av-fallback">${r.name.charAt(0)}</div>`
+            : `<div class="av-fallback show">${r.name.charAt(0)}</div>`
+          }
+        </div>
+        <div class="p-info">
+          <div class="p-name">${r.name}</div>
+          ${roleChip}
+          <div class="bar"><div class="bar-fill" data-pct="${pct}" style="width:0%"></div></div>
+        </div>
+        <div class="p-metric">
+          <div class="m-val">${m.main}</div>
+          <div class="m-sub">${m.sub}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="rank-list">${html}</div>`;
+
+  // Animar barras
+  requestAnimationFrame(()=>{
+    el.querySelectorAll('.bar-fill').forEach(b=>{ b.style.width=b.dataset.pct+'%'; });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAVEGAÇÃO DE SEMANA
+═══════════════════════════════════════════════════════════ */
+function shiftWeek(delta){
+  weekOffset = delta===0 ? 0 : weekOffset+delta;
+  renderAgenda();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════════════════════ */
+document.getElementById('tabsNav').addEventListener('click',e=>{
+  const tab=e.target.closest('[data-tab]');
+  if(!tab) return;
+  const name=tab.dataset.tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===tab));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${name}`));
+});
+
+/* ═══════════════════════════════════════════════════════════
+   ESTADOS DE LOADING / ERRO
+═══════════════════════════════════════════════════════════ */
+function showSpinner(sec){
+  q(`body-${sec}`).innerHTML=`<div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div>`;
+}
+function showErr(sec,msg){
+  q(`body-${sec}`).innerHTML=errHTML(msg);
+}
+function errHTML(msg){
+  return `<div class="err-box">⚠️ ${msg}</div>`+
+    emptyHTML('Erro ao carregar','Verifique se a planilha está pública ("Qualquer pessoa com o link pode ver") e clique em Atualizar.');
+}
+function emptyHTML(title,text){
+  return `<div class="empty"><div class="empty-ico">📊</div><div class="empty-ttl">${title}</div><div class="empty-txt">${text}</div></div>`;
+}
+function fmtErr(e){
+  if((e.message||'').includes('Failed to fetch'))
+    return 'Falha de rede. Confirme que a planilha está compartilhada como pública.';
+  return e.message||'Erro desconhecido';
+}
+function q(id){ return document.getElementById(id); }
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  initFirebase();    // Firebase em tempo real
+  refreshAll();      // Google Sheets
+});
+</script>
+</body>
+</html>
