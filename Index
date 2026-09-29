@@ -1,773 +1,468 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>MMADV · Ranking da Equipe</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <!-- PapaParse para Google Sheets -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <style>
-    /* ── TOKENS ─────────────────────────────────────────── */
-    :root {
-      --bg:    #06101f;
-      --surf:  #0b1a2e;
-      --surf2: #0e2040;
-      --bord:  rgba(197,162,74,.13);
-      --bord2: rgba(197,162,74,.32);
-      --gold:  #C5A24A;
-      --goldl: #f0c96a;
-      --goldd: #7a6020;
-      --text:  #e8f0fa;
-      --muted: #6a85ab;
-      --m1:    #FFD700;
-      --m2:    #C0C0C0;
-      --m3:    #CD7F32;
-      box-sizing: border-box;
-      padding-top: env(safe-area-inset-top,0px);
-      padding-bottom: env(safe-area-inset-bottom,0px);
-    }
-    *,*::before,*::after{box-sizing:inherit;margin:0;padding:0;}
-    html,body{height:100%;}
-    body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;min-height:100vh;}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MMADV · Painel Comercial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --bg:#06101f; --surf:#0b1a2e; --surf2:#0e2040;
+  --bord:rgba(197,162,74,.16); --bord2:rgba(197,162,74,.4);
+  --gold:#C5A24A; --goldl:#f0c96a; --goldd:#7a6020;
+  --text:#e8f0fa; --muted:#7f98bd;
+  --m1:#FFD700; --m2:#C0C0C0; --m3:#CD7F32;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{background:radial-gradient(ellipse at top,#0d2140 0%,var(--bg) 60%);color:var(--text);
+  font-family:'Inter',sans-serif;display:flex;flex-direction:column;}
+body.idle{cursor:none;}
 
-    /* ── HEADER ─────────────────────────────────────────── */
-    .hd{
-      position:sticky;top:0;z-index:200;
-      background:linear-gradient(135deg,#0b1a2e 0%,#0e2040 50%,#0b1a2e 100%);
-      border-bottom:1px solid var(--bord);
-      padding:14px 20px;
-      display:flex;align-items:center;flex-wrap:wrap;gap:10px;
-    }
-    .hd-brand{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
-    .hd-logo{
-      width:42px;height:42px;border-radius:10px;flex-shrink:0;
-      background:linear-gradient(135deg,var(--goldd) 0%,var(--gold) 60%,var(--goldl) 100%);
-      display:flex;align-items:center;justify-content:center;
-      font-family:'Montserrat',sans-serif;font-weight:900;font-size:14px;color:#040d19;letter-spacing:-.5px;
-    }
-    .hd-name{font-family:'Montserrat',sans-serif;font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .hd-sub{font-size:10px;color:var(--muted);letter-spacing:.04em;}
-    .hd-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-    .live-dot{
-      display:flex;align-items:center;gap:5px;
-      font-size:10px;color:var(--muted);
-      padding:4px 10px;border-radius:20px;
-      border:1px solid var(--bord);background:var(--surf2);
-    }
-    .dot{width:7px;height:7px;border-radius:50%;background:#4ade80;}
-    .dot.off{background:#ef4444;animation:none;}
-    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
-    .dot.on{animation:pulse 1.6s ease-in-out infinite;}
-    .period-sel{
-      background:var(--surf2);border:1px solid var(--bord2);
-      color:var(--gold);padding:7px 11px;border-radius:8px;
-      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;
-      cursor:pointer;outline:none;max-width:160px;
-    }
-    .period-sel:focus{border-color:var(--gold);}
-    .btn-refresh{
-      background:linear-gradient(135deg,var(--goldd) 0%,var(--gold) 100%);
-      border:none;color:#040d19;padding:8px 14px;border-radius:8px;
-      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;
-      cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .18s;
-    }
-    .btn-refresh:hover{opacity:.85;}
-    .btn-refresh:disabled{opacity:.45;cursor:not-allowed;}
-    .ref-ico{display:inline-block;}
-    @keyframes spin{to{transform:rotate(360deg);}}
-    .spinning{animation:spin .7s linear infinite;}
-    .hd-ts{font-size:10px;color:var(--muted);white-space:nowrap;width:100%;}
+/* HEADER */
+.hd{flex:0 0 8.5vh;display:flex;align-items:center;gap:1.2vw;padding:0 1.8vw;
+  background:linear-gradient(135deg,#0b1a2e,#0e2040 50%,#0b1a2e);border-bottom:1px solid var(--bord2);}
+.logo{height:5.2vh;aspect-ratio:1;border-radius:.9vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--goldd),var(--gold) 60%,var(--goldl));
+  font-family:'Montserrat',sans-serif;font-weight:900;font-size:2.1vh;color:#040d19;}
+.ttl{font-family:'Montserrat',sans-serif;font-weight:800;font-size:2.6vh;letter-spacing:.02em;}
+.sub{font-size:1.25vh;color:var(--muted);letter-spacing:.08em;margin-top:.2vh;}
+.hd-sp{flex:1;}
+.filters{display:flex;align-items:center;gap:.6vw;}
+.sel{background:var(--surf2);border:1px solid var(--bord2);color:var(--gold);padding:.9vh .9vw;border-radius:1vh;
+  font-family:'Montserrat',sans-serif;font-size:1.7vh;font-weight:700;cursor:pointer;outline:none;}
+.sel:focus{border-color:var(--gold);}
+.btn{background:linear-gradient(135deg,var(--goldd),var(--gold));border:none;color:#040d19;padding:1vh 1.1vw;border-radius:1vh;
+  font-family:'Montserrat',sans-serif;font-size:1.7vh;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:.5vw;}
+.btn:hover{opacity:.85;} .btn:disabled{opacity:.5;cursor:wait;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;animation:spin .7s linear infinite;}
+.clock{font-family:'Montserrat',sans-serif;font-weight:700;font-size:2.6vh;text-align:right;line-height:1.1;}
+.clock small{display:block;font-size:1.2vh;color:var(--muted);font-weight:500;margin-top:.3vh;}
+.live{display:flex;align-items:center;gap:.5vw;font-size:1.3vh;color:var(--muted);padding:.6vh 1vw;border-radius:5vh;border:1px solid var(--bord);background:var(--surf2);}
+.dot{width:1vh;height:1vh;border-radius:50%;background:#ef4444;}
+.dot.on{background:#4ade80;animation:pulse 1.6s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
-    /* ── TABS ────────────────────────────────────────────── */
-    .tabs{
-      display:flex;
-      background:var(--surf);border-bottom:1px solid var(--bord);
-      overflow-x:auto;scrollbar-width:none;padding:0 12px;
-    }
-    .tabs::-webkit-scrollbar{display:none;}
-    .tab{
-      padding:13px 18px;
-      font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;
-      color:var(--muted);cursor:pointer;white-space:nowrap;
-      border-bottom:2px solid transparent;
-      transition:color .2s,border-color .2s;user-select:none;
-    }
-    .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
-    .tab:hover:not(.active){color:var(--text);}
+/* GRID */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1.2fr;gap:1.2vh 1vw;padding:1.4vh 1vw 1.4vh;}
+.box{min-height:0;min-width:0;display:flex;flex-direction:column;background:rgba(11,26,46,.7);
+  border:1px solid var(--bord);border-radius:1.2vh;padding:1.1vh 1vw 1vh;}
+.box-hd{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:1vw;
+  padding-bottom:.8vh;margin-bottom:.8vh;border-bottom:1px solid var(--bord);}
+.box-t{white-space:nowrap;font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.9vh;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);}
+.box-s{font-family:'Montserrat',sans-serif;font-weight:700;font-size:1.6vh;color:var(--muted);text-align:right;}
+.box-s b{color:var(--text);font-weight:800;}
+.list{flex:1;min-height:0;display:flex;flex-direction:column;gap:.7vh;}
 
-    /* ── CONTENT ─────────────────────────────────────────── */
-    .content{max-width:860px;margin:0 auto;padding:20px 16px 48px;}
-    .panel{display:none;}
-    .panel.active{display:block;}
+/* CARD */
+.card{flex:1 1 0;min-height:0;display:flex;align-items:center;gap:.9vw;padding:0 .9vw;
+  background:var(--surf);border:1px solid var(--bord);border-radius:1.1vh;position:relative;overflow:hidden;}
+.card.r1{background:linear-gradient(135deg,rgba(255,215,0,.09),var(--surf) 65%);border-color:rgba(255,215,0,.45);box-shadow:0 0 2.2vh rgba(255,215,0,.09);}
+.card.r2{border-color:rgba(192,192,192,.3);}
+.card.r3{border-color:rgba(205,127,50,.3);}
+.card.zero{opacity:.45;}
+.pos{height:62%;max-height:4.4vh;aspect-ratio:1;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  font-family:'Montserrat',sans-serif;font-weight:900;font-size:1.8vh;background:var(--surf2);color:var(--muted);}
+.card.r1 .pos{background:radial-gradient(circle at 40% 35%,#ffe55c,#FFD700,#b8860b);color:#5a3a00;}
+.card.r2 .pos{background:radial-gradient(circle at 40% 35%,#eee,#c0c0c0,#808080);color:#303030;}
+.card.r3 .pos{background:radial-gradient(circle at 40% 35%,#e8a060,#CD7F32,#8b4a10);color:#4a2800;}
+.av{height:76%;max-height:6.4vh;aspect-ratio:1;flex:0 0 auto;position:relative;}
+.av img,.av .fb{width:100%;height:100%;border-radius:50%;border:.25vh solid var(--bord2);object-fit:cover;display:block;}
+.av .fb{display:none;align-items:center;justify-content:center;background:var(--surf2);color:var(--gold);
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:2.2vh;}
+.av .fb.show{display:flex;}
+.r1 .av img,.r1 .av .fb{border-color:var(--m1);}
+.info{flex:1;min-width:0;}
+.nm{font-family:'Montserrat',sans-serif;font-weight:700;font-size:2.1vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chip{display:inline-block;margin-left:.6vw;padding:.1vh .6vw;border-radius:5vh;font-size:1.1vh;font-weight:700;vertical-align:middle;}
+.chip.sdr{background:rgba(59,130,246,.18);color:#60a5fa;}
+.chip.ss{background:rgba(168,85,247,.18);color:#c084fc;}
+.bar{height:.5vh;background:var(--surf2);border-radius:1vh;margin-top:.6vh;overflow:hidden;}
+.bar i{display:block;height:100%;width:0;border-radius:1vh;background:linear-gradient(90deg,var(--goldd),var(--gold));transition:width 1s cubic-bezier(.4,0,.2,1);}
+.r1 .bar i{background:linear-gradient(90deg,#b8860b,var(--m1));}
+.mt{text-align:right;flex:0 0 auto;}
+.mv{font-family:'Montserrat',sans-serif;font-weight:900;font-size:2.5vh;line-height:1.05;}
+.r1 .mv{color:var(--m1);} .r2 .mv{color:var(--m2);} .r3 .mv{color:var(--m3);}
+.ms{font-size:1.25vh;color:var(--muted);margin-top:.2vh;}
+.msg{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:1.6vh;padding:2vh;}
+.msg.err{color:#ff8888;}
+.week-t{margin-left:.6vw;white-space:nowrap;font-size:1.3vh;color:var(--gold);font-family:'Montserrat',sans-serif;font-weight:700;}
 
-    /* ── STATS ───────────────────────────────────────────── */
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px;}
-    .stat-box{background:var(--surf);border:1px solid var(--bord);border-radius:12px;padding:14px 14px 12px;text-align:center;}
-    .stat-val{font-family:'Montserrat',sans-serif;font-weight:900;font-size:20px;color:var(--gold);line-height:1.1;}
-    .stat-lbl{font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
-
-    /* ── SECTION TITLE ───────────────────────────────────── */
-    .sec-title{
-      font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;
-      letter-spacing:.1em;text-transform:uppercase;color:var(--gold);
-      padding-bottom:10px;border-bottom:1px solid var(--bord);margin-bottom:14px;
-    }
-
-    /* ── WEEK BAR ────────────────────────────────────────── */
-    .week-bar{
-      background:var(--surf);border:1px solid var(--bord);border-radius:10px;
-      padding:11px 16px;margin-bottom:14px;
-      display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
-    }
-    .week-lbl{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
-    .week-val{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;color:var(--gold);}
-    .week-nav{display:flex;gap:4px;}
-    .btn-week{
-      background:var(--surf2);border:1px solid var(--bord);color:var(--gold);
-      width:28px;height:28px;border-radius:6px;font-size:14px;
-      cursor:pointer;display:flex;align-items:center;justify-content:center;
-      transition:background .15s;user-select:none;
-    }
-    .btn-week:hover{background:var(--bord);}
-
-    /* ── RANKING ─────────────────────────────────────────── */
-    .rank-list{display:flex;flex-direction:column;gap:8px;}
-    .rank-card{
-      background:var(--surf);border:1px solid var(--bord);border-radius:14px;
-      padding:14px 16px;display:flex;align-items:center;gap:12px;
-      position:relative;overflow:hidden;
-      transition:transform .15s,border-color .15s,box-shadow .15s;
-    }
-    .rank-card:hover{transform:translateY(-2px);border-color:var(--bord2);}
-    .rank-card.r1{background:linear-gradient(135deg,rgba(255,215,0,.06) 0%,var(--surf) 60%);border-color:rgba(255,215,0,.35);box-shadow:0 0 28px rgba(255,215,0,.07);}
-    .rank-card.r2{border-color:rgba(192,192,192,.25);}
-    .rank-card.r3{border-color:rgba(205,127,50,.25);}
-    .rank-card.zero{opacity:.5;}
-    .rank-card.r1::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--m1),transparent);}
-
-    /* badge */
-    .badge{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Montserrat',sans-serif;font-weight:900;font-size:14px;}
-    .badge.p1{background:radial-gradient(circle at 40% 35%,#ffe55c,#FFD700,#b8860b);color:#5a3a00;font-size:18px;box-shadow:0 2px 8px rgba(255,215,0,.4);}
-    .badge.p2{background:radial-gradient(circle at 40% 35%,#e8e8e8,#c0c0c0,#808080);color:#303030;}
-    .badge.p3{background:radial-gradient(circle at 40% 35%,#e8a060,#CD7F32,#8b4a10);color:#4a2800;}
-    .badge.pn{background:var(--surf2);color:var(--muted);}
-
-    /* avatar */
-    .av-wrap{position:relative;flex-shrink:0;}
-    .avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2.5px solid var(--bord);display:block;}
-    .r1 .avatar{border-color:var(--m1);box-shadow:0 0 14px rgba(255,215,0,.4);}
-    .r2 .avatar{border-color:var(--m2);}
-    .r3 .avatar{border-color:var(--m3);}
-    .av-fallback{
-      width:56px;height:56px;border-radius:50%;border:2.5px solid var(--bord);
-      background:var(--surf2);display:none;
-      align-items:center;justify-content:center;
-      font-family:'Montserrat',sans-serif;font-weight:700;font-size:20px;color:var(--gold);
-    }
-    .av-fallback.show{display:flex;}
-
-    /* role chip */
-    .role-chip{
-      display:inline-block;padding:2px 8px;border-radius:20px;
-      font-size:10px;font-weight:700;letter-spacing:.04em;margin-top:2px;
-    }
-    .role-sdr{background:rgba(59,130,246,.15);color:#60a5fa;}
-    .role-social{background:rgba(168,85,247,.15);color:#c084fc;}
-    .role-closer{background:rgba(197,162,74,.15);color:var(--gold);}
-
-    /* info */
-    .p-info{flex:1;min-width:0;}
-    .p-name{font-family:'Montserrat',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .bar{height:3px;background:var(--surf2);border-radius:2px;margin-top:8px;overflow:hidden;}
-    .bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--goldd),var(--gold));transition:width .9s cubic-bezier(.4,0,.2,1);width:0%;}
-    .r1 .bar-fill{background:linear-gradient(90deg,#b8860b,var(--m1));}
-
-    /* metric */
-    .p-metric{text-align:right;flex-shrink:0;}
-    .m-val{font-family:'Montserrat',sans-serif;font-weight:900;font-size:15px;color:var(--text);}
-    .r1 .m-val{color:var(--m1);}
-    .r2 .m-val{color:var(--m2);}
-    .r3 .m-val{color:var(--m3);}
-    .m-sub{font-size:10px;color:var(--muted);margin-top:2px;}
-
-    /* ── LOADING / EMPTY / ERROR ─────────────────────────── */
-    .empty{text-align:center;padding:50px 20px;color:var(--muted);}
-    .empty-ico{font-size:44px;margin-bottom:12px;}
-    .empty-ttl{font-family:'Montserrat',sans-serif;font-weight:700;font-size:15px;color:var(--text);margin-bottom:6px;}
-    .empty-txt{font-size:12px;line-height:1.6;max-width:340px;margin:0 auto;}
-    .loading-wrap{display:flex;flex-direction:column;align-items:center;padding:70px 20px;gap:14px;}
-    .spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--surf2);border-top-color:var(--gold);animation:spin .75s linear infinite;}
-    .loading-txt{font-size:12px;color:var(--muted);}
-    .err-box{background:rgba(229,85,85,.09);border:1px solid rgba(229,85,85,.3);border-radius:10px;padding:13px 16px;font-size:12px;color:#ff8888;line-height:1.6;margin-bottom:14px;}
-    .err-box code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-size:11px;}
-
-    /* ── STATUS PILLS (agenda) ───────────────────────────── */
-    .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;}
-    .pill-ag{background:#1e3a8a22;color:#93c5fd;}
-    .pill-re{background:#14532d22;color:#86efac;}
-    .pill-ca{background:#7f1d1d22;color:#fca5a5;}
-    .pill-ns{background:#78350f22;color:#fcd34d;}
-
-    /* ── RESPONSIVE ──────────────────────────────────────── */
-    @media(max-width:520px){
-      .hd{padding:12px 14px;}
-      .content{padding:14px 12px 40px;}
-      .rank-card{padding:12px 12px;gap:10px;}
-      .avatar,.av-fallback{width:46px;height:46px;}
-      .m-val{font-size:13px;}
-    }
-    @media(prefers-reduced-motion:reduce){
-      .rank-card{transition:none;}
-      .bar-fill{transition:none;}
-      .spinning{animation:none;}
-      .spinner{animation:none;}
-      .dot{animation:none;}
-    }
-  </style>
+@media (max-aspect-ratio:1/1){
+  .grid{grid-template-columns:1fr;grid-template-rows:repeat(4,auto);overflow-y:auto;}
+  html,body{overflow:auto;}
+}
+@media(prefers-reduced-motion:reduce){.bar i,.dot.on{transition:none;animation:none;}}
+.list.compact{gap:.4vh;}
+.list.compact .card{gap:.7vw;padding:0 .7vw;}
+.list.compact .pos{max-height:3vh;font-size:1.4vh;}
+.list.compact .av{max-height:3.6vh;}
+.list.compact .av .fb{font-size:1.6vh;}
+.list.compact .nm{font-size:1.6vh;}
+.list.compact .chip{font-size:.95vh;}
+.list.compact .bar{margin-top:.3vh;height:.4vh;}
+.list.compact .mv{font-size:1.7vh;}
+.list.compact .ms{font-size:1vh;margin-top:0;}
+</style>
 </head>
 <body>
 
-<!-- ════════════════ HEADER ════════════════ -->
 <header class="hd">
-  <div class="hd-brand">
-    <div class="hd-logo">MM</div>
-    <div>
-      <div class="hd-name">Ranking da Equipe</div>
-      <div class="hd-sub">MARCONDES MADUREIRA ADVOCACIA</div>
-    </div>
+  <div class="logo">MM</div>
+  <div>
+    <div class="ttl">Painel Comercial</div>
+    <div class="sub">MARCONDES MADUREIRA ADVOCACIA</div>
   </div>
-  <div class="hd-right">
-    <div class="live-dot" id="liveIndicator">
-      <span class="dot on" id="liveDot"></span>
-      <span id="liveLabel">Conectando…</span>
-    </div>
-    <select class="period-sel" id="monthSel" title="Selecionar mês"></select>
-    <button class="btn-refresh" id="btnRefresh" onclick="refreshAll()">
-      <span class="ref-ico" id="refIco">↻</span> Atualizar
-    </button>
+  <div class="hd-sp"></div>
+  <div class="filters">
+    <select class="sel" id="selMonth" title="Mês"></select>
+    <select class="sel" id="selYear" title="Ano"></select>
+    <button class="btn" id="btnRef" title="Atualizar agora"><span id="refIco">↻</span> Atualizar</button>
   </div>
-  <div class="hd-ts" id="lastTs">Aguardando dados…</div>
+  <div class="live"><span class="dot" id="fbDot"></span><span id="fbLbl">Conectando…</span></div>
+  <div class="clock"><span id="clk">--:--</span><small id="upd">Aguardando dados…</small></div>
 </header>
 
-<!-- ════════════════ TABS ════════════════ -->
-<nav class="tabs" id="tabsNav">
-  <div class="tab active"  data-tab="closers">🏆 Closers</div>
-  <div class="tab"         data-tab="sdrs">📞 SDRs</div>
-  <div class="tab"         data-tab="social">📱 Social Sellers</div>
-  <div class="tab"         data-tab="agenda">📅 Agendamentos</div>
-</nav>
-
-<!-- ════════════════ CONTEÚDO ════════════════ -->
-<main class="content">
-
-  <!-- CLOSERS -->
-  <div class="panel active" id="panel-closers">
-    <div class="stats" id="st-closers"></div>
-    <div class="sec-title" id="ttl-closers">RANKING DE CLOSERS</div>
-    <div id="body-closers"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
-  </div>
-
-  <!-- SDRs -->
-  <div class="panel" id="panel-sdrs">
-    <div class="stats" id="st-sdrs"></div>
-    <div class="sec-title" id="ttl-sdrs">RANKING DE SDRs</div>
-    <div id="body-sdrs"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
-  </div>
-
-  <!-- SOCIAL SELLERS -->
-  <div class="panel" id="panel-social">
-    <div class="stats" id="st-social"></div>
-    <div class="sec-title" id="ttl-social">RANKING SOCIAL SELLERS</div>
-    <div id="body-social"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div></div>
-  </div>
-
-  <!-- AGENDAMENTOS (Firebase) -->
-  <div class="panel" id="panel-agenda">
-    <div class="week-bar">
-      <div>
-        <div class="week-lbl">📅 Semana de referência</div>
-        <div class="week-val" id="weekLabel">Calculando…</div>
-      </div>
-      <div class="week-nav">
-        <button class="btn-week" onclick="shiftWeek(-1)" title="Semana anterior">‹</button>
-        <button class="btn-week" onclick="shiftWeek(0)"  title="Semana atual">●</button>
-        <button class="btn-week" onclick="shiftWeek(1)"  title="Próxima semana">›</button>
-      </div>
-    </div>
-    <div class="stats" id="st-agenda"></div>
-    <div class="sec-title">QUEM MAIS AGENDOU NA SEMANA</div>
-    <div id="body-agenda"><div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Conectando ao Firebase…</div></div></div>
-  </div>
-
+<main class="grid">
+  <section class="box">
+    <div class="box-hd"><div class="box-t">🏆 Closers</div><div class="box-s" id="s-closers"></div></div>
+    <div class="list" id="l-closers"><div class="msg">Carregando…</div></div>
+  </section>
+  <section class="box">
+    <div class="box-hd"><div class="box-t">📞 SDRs</div><div class="box-s" id="s-sdrs"></div></div>
+    <div class="list" id="l-sdrs"><div class="msg">Carregando…</div></div>
+  </section>
+  <section class="box">
+    <div class="box-hd"><div class="box-t">📱 Social Sellers</div><div class="box-s" id="s-social"></div></div>
+    <div class="list" id="l-social"><div class="msg">Carregando…</div></div>
+  </section>
+  <section class="box">
+    <div class="box-hd"><div class="box-t">📅 Agendamentos <span class="week-t" id="weekLbl"></span></div><div class="box-s" id="s-agenda"></div></div>
+    <div class="list" id="l-agenda"><div class="msg">Conectando ao Firebase…</div></div>
+  </section>
 </main>
 
 <script>
-/* ═══════════════════════════════════════════════════════════
-   CONFIGURAÇÃO
-═══════════════════════════════════════════════════════════ */
+/* ═══ CONFIGURAÇÃO ═══ */
 const CFG = {
-  /* Google Sheets — Vendas */
-  SALES_SHEET_ID:   '1KxhE62RLnjrCd5aPuwQAChcCXIJddATF75P-FLL3Whc',
-  SALES_SHEET_NAME: 'Base',
+  SHEET_ID:   '1KxhE62RLnjrCd5aPuwQAChcCXIJddATF75P-FLL3Whc',
+  SHEET_NAME: 'Base',
+  // Cabeçalhos (comparados sem espaços nas pontas)
+  C_VALUE:  'VALOR RECEBIDO',      // coluna C
   C_SDR:    'SDR?',
   C_CLOSER: 'CLOSER?',
-  C_VALUE:  'VALOR TOTAL CONTRATADO',
   C_MONTH:  'MES',
   C_YEAR:   'ANO',
   C_SOCIAL: 'Social Selling',
+  SS_TAG:   'SS',                  // marcação genérica, caso apareça "SS" sem nome
 
-  /* Times — Vendas (Google Sheets) */
   CLOSERS:       ['Malu','Léo','Laís','Franklin','Júlia'],
   SDRS:          ['Kelly','Izabel','Camila'],
   SOCIAL_SELLERS:['Layla','Vanessa'],
 
-  /* Times — Agendamentos (Firebase) */
   AG_SDR:    ['Izabel','Kelly','Laís','Júlia'],
   AG_SOCIAL: ['Daniel','Camila','Layla','Vanessa'],
 
-  /* Fotos */
+  REFRESH_SHEET_MS: 60000,   // recarrega a planilha a cada 60 s
+
   PHOTOS: {
-    'Malu':    'img/malu-prado.png',
-    'Léo':     'img/leo-marcondes.png',
-    'Laís':    'img/lais-pena.png',
-    'Franklin':'img/franklin-marques.png',
-    'Júlia':   'img/julia-borges.png',
-    'Kelly':   'img/kelly-cardoso.png',
-    'Izabel':  'img/izabel-lopes.png',
-    'Camila':  'img/camila-santiago.png',
-    'Layla':   'img/layla-alves.png',
-    'Vanessa': 'img/vanessa-simoes.png',
+    'Malu':'img/malu-prado.png','Léo':'img/leo-marcondes.png','Laís':'img/lais-pena.png',
+    'Franklin':'img/franklin-marques.png','Júlia':'img/julia-borges.png','Kelly':'img/kelly-cardoso.png',
+    'Izabel':'img/izabel-lopes.png','Camila':'img/camila-santiago.png','Layla':'img/layla-alves.png',
+    'Vanessa':'img/vanessa-simoes.png',
   },
 };
-
-/* Roles visíveis nos chips */
 const ROLES = {};
-CFG.AG_SDR.forEach(n    => { ROLES[n]='SDR'; });
-CFG.AG_SOCIAL.forEach(n => { ROLES[n]='Social Seller'; });
+CFG.AG_SDR.forEach(n=>ROLES[n]='SDR');
+CFG.AG_SOCIAL.forEach(n=>ROLES[n]='Social Seller');
 
-/* Firebase config do app de agendamentos */
 const FB_CFG = {
-  apiKey:            'AIzaSyDHBmGuYWptEN-UFawXtA3ROiT2NuOjC3E',
-  authDomain:        'agendamentommadv-32dae.firebaseapp.com',
-  projectId:         'agendamentommadv-32dae',
-  storageBucket:     'agendamentommadv-32dae.firebasestorage.app',
-  messagingSenderId: '32241097932',
-  appId:             '1:32241097932:web:3459dc7d8eba9d93a77669',
+  apiKey:'AIzaSyDHBmGuYWptEN-UFawXtA3ROiT2NuOjC3E',
+  authDomain:'agendamentommadv-32dae.firebaseapp.com',
+  projectId:'agendamentommadv-32dae',
+  storageBucket:'agendamentommadv-32dae.firebasestorage.app',
+  messagingSenderId:'32241097932',
+  appId:'1:32241097932:web:3459dc7d8eba9d93a77669',
 };
-
-/* Normalização de nomes */
 const NORM = {
-  'Leo':'Léo','Leonardo':'Léo','leo':'Léo','Léo':'Léo',
-  'Malu':'Malu','Franklin':'Franklin',
-  'Julia':'Júlia','Júlia':'Júlia',
-  'Lais':'Laís','Laís':'Laís',
-  'Kelly':'Kelly','Izabel':'Izabel','Isabel':'Izabel',
-  'Camila':'Camila','Layla':'Layla','Vanessa':'Vanessa',
-  'Daniel':'Daniel',
+  'Leo':'Léo','Leonardo':'Léo','leo':'Léo','Léo':'Léo','Malu':'Malu','Franklin':'Franklin',
+  'Julia':'Júlia','Júlia':'Júlia','Lais':'Laís','Laís':'Laís','Kelly':'Kelly',
+  'Izabel':'Izabel','Isabel':'Izabel','Camila':'Camila','Layla':'Layla','Vanessa':'Vanessa','Daniel':'Daniel',
 };
-
-/* ═══════════════════════════════════════════════════════════
-   ESTADO GLOBAL
-═══════════════════════════════════════════════════════════ */
-let salesData   = [];
-let meetings    = [];   // Firestore em tempo real
-let selMonth    = '';
-let selYear     = '';
-let weekOffset  = 0;    // 0=semana atual, -1=anterior, +1=próxima
-let fbUnsubscribe = null;
-
-const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const PT_MONTHS3 = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-/* ═══════════════════════════════════════════════════════════
-   UTILITÁRIOS
-═══════════════════════════════════════════════════════════ */
-function norm(s){ return NORM[(s||'').trim()] || (s||'').trim(); }
+/* ═══ ESTADO ═══ */
+let salesData = [], meetings = [], selMonth = '', selYear = '';
+let fbUnsub = null;
+const $ = id => document.getElementById(id);
 
+/* ═══ UTIL ═══ */
+const norm = s => NORM[(s||'').trim()] || (s||'').trim();
 function parseBRL(s){
   if(!s) return 0;
-  return parseFloat((s+'').replace(/R\$\s?/g,'').replace(/\./g,'').replace(',','.').trim())||0;
+  const t = String(s).replace(/[^\d,.\-]/g,'').replace(/\./g,'').replace(',','.');
+  return parseFloat(t) || 0;
 }
-function fmtBRL(v){
-  return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(v);
-}
-function fmtDateBR(d){
-  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
-}
+const fmtBRL = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(v);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-/* Semana: segunda à domingo */
-function weekStart(offset){
-  const now = new Date();
-  now.setDate(now.getDate() + offset*7);
-  const day = now.getDay();
-  const diff = day===0 ? -6 : 1-day;
-  const mon = new Date(now); mon.setDate(now.getDate()+diff); mon.setHours(0,0,0,0);
-  return mon;
+function weekStart(){
+  const n = new Date(), d = n.getDay();
+  const m = new Date(n); m.setDate(n.getDate() + (d===0 ? -6 : 1-d)); m.setHours(0,0,0,0); return m;
 }
-function weekEnd(offset){
-  const mon = weekStart(offset);
-  const sun = new Date(mon); sun.setDate(mon.getDate()+6); sun.setHours(23,59,59,999);
-  return sun;
+function weekEnd(){ const s = weekStart(), e = new Date(s); e.setDate(s.getDate()+6); e.setHours(23,59,59,999); return e; }
+function inWeek(str){
+  if(!str) return false;
+  const d = new Date(String(str).slice(0,10)+'T00:00:00');
+  return d >= weekStart() && d <= weekEnd();
 }
-function inWeek(dateStr, offset){
-  if(!dateStr) return false;
-  const d = new Date(dateStr+'T00:00:00');
-  return d >= weekStart(offset) && d <= weekEnd(offset);
-}
-function weekLabel(offset){
-  const s = weekStart(offset), e = weekEnd(offset);
-  const f = dt => `${String(dt.getDate()).padStart(2,'0')}/${PT_MONTHS3[dt.getMonth()]}`;
+function weekLabel(){
+  const s = weekStart(), e = weekEnd(), f = d=>`${String(d.getDate()).padStart(2,'0')}/${PT_MONTHS3[d.getMonth()]}`;
   return `${f(s)} a ${f(e)}`;
 }
 
-/* Google Sheets gviz CSV */
-function gvizURL(sheetId, sheetName){
-  return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-}
-async function fetchCSV(sheetId, sheetName){
-  const res  = await fetch(gvizURL(sheetId,sheetName),{cache:'no-store'});
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+/* ═══ PLANILHA ═══ */
+async function fetchSheet(){
+  const url = `https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CFG.SHEET_NAME)}`;
+  const res = await fetch(url,{cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
   const text = await res.text();
-  return new Promise((ok,fail)=>{
-    Papa.parse(text,{header:true,skipEmptyLines:true,
-      complete:r=>ok(r.data), error:e=>fail(e)});
-  });
+  return new Promise((ok,fail)=>Papa.parse(text,{
+    header:true, skipEmptyLines:true,
+    transformHeader:h=>h.trim(),
+    complete:r=>{
+      // acha as colunas pelo início do nome (aceita "SDR?", "SDR / SS", etc.)
+      const keys = Object.keys(r.data[0]||{});
+      const find = (re,fb)=>keys.find(k=>re.test(k)) || fb;
+      CFG.C_SDR   = find(/^SDR/i, CFG.C_SDR);
+      CFG.C_VALUE = find(/^VALOR RECEBIDO/i, CFG.C_VALUE);
+      CFG.C_SOCIAL= find(/^Social/i, CFG.C_SOCIAL);
+      ok(r.data);
+    }, error:fail,
+  }));
 }
-
-/* ═══════════════════════════════════════════════════════════
-   FIREBASE — inicialização e listener em tempo real
-═══════════════════════════════════════════════════════════ */
-firebase.initializeApp(FB_CFG);
-const auth = firebase.auth();
-const db   = firebase.firestore();
-
-function initFirebase(){
-  setLive(null,'Conectando…');
-  auth.onAuthStateChanged(user=>{
-    if(user){
-      startListener();
-    } else {
-      auth.signInAnonymously().catch(err=>{
-        setLive(false,'Erro de auth');
-        q('body-agenda').innerHTML = errHTML('Falha na autenticação Firebase: '+err.message);
-      });
-    }
-  });
-}
-
-function startListener(){
-  if(fbUnsubscribe) fbUnsubscribe();
-  fbUnsubscribe = db.collection('meetings')
-    .orderBy('createdAt','desc')
-    .onSnapshot(
-      snap=>{
-        meetings = snap.docs.map(d=>({id:d.id,...d.data()}));
-        setLive(true,'Ao vivo');
-        renderAgenda();
-        updateTs();
-      },
-      err=>{
-        setLive(false,'Desconectado');
-        q('body-agenda').innerHTML = errHTML('Firebase: '+err.message);
-      }
-    );
-}
-
-function setLive(ok, label){
-  const dot  = q('liveDot');
-  const lbl  = q('liveLabel');
-  lbl.textContent = label;
-  dot.className = 'dot '+(ok===true?'on':ok===false?'off':'');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   CARGA E REFRESH
-═══════════════════════════════════════════════════════════ */
-async function refreshAll(){
-  const btn=q('btnRefresh'), ico=q('refIco');
-  btn.disabled=true; ico.classList.add('spinning');
-  showSpinner('closers'); showSpinner('sdrs'); showSpinner('social');
-
+async function loadSales(){
   try{
-    salesData = await fetchCSV(CFG.SALES_SHEET_ID, CFG.SALES_SHEET_NAME);
-    buildMonthSelect();
+    salesData = await fetchSheet();
+    pickMonth();
     renderSales();
-  } catch(e){
-    const msg = fmtErr(e);
-    showErr('closers',msg); showErr('sdrs',msg); showErr('social',msg);
+    $('upd').textContent = 'Atualizado às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    const msg = (e.message||'').includes('Failed to fetch')
+      ? 'Falha de rede ao ler a planilha. Confirme que ela está compartilhada como pública.'
+      : (e.message||'Erro desconhecido');
+    ['closers','sdrs','social'].forEach(k=>{ if(!salesData.length) $('l-'+k).innerHTML=`<div class="msg err">⚠️ ${esc(msg)}</div>`; });
   }
-
-  updateTs();
-  btn.disabled=false; ico.classList.remove('spinning');
 }
-
-function updateTs(){
-  q('lastTs').textContent = 'Atualizado em '+new Date().toLocaleTimeString('pt-BR');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   SELETOR DE MÊS
-═══════════════════════════════════════════════════════════ */
-function buildMonthSelect(){
+/* Filtros de mês e ano. Padrão: mês atual; a escolha do usuário é mantida nas atualizações automáticas. */
+let userPicked = false;
+function pickMonth(){
   const pairs = new Set();
   salesData.forEach(r=>{
     const m=(r[CFG.C_MONTH]||'').trim(), y=(r[CFG.C_YEAR]||'').trim();
-    if(m&&y) pairs.add(`${m}|${y}`);
+    if(m&&y) pairs.add(m+'|'+y);
   });
   const sorted = [...pairs].sort((a,b)=>{
     const [ma,ya]=a.split('|'), [mb,yb]=b.split('|');
     return (+ya - +yb) || (PT_MONTHS.indexOf(ma)-PT_MONTHS.indexOf(mb));
   });
-  const sel = q('monthSel');
-  sel.innerHTML = sorted.map(p=>{
-    const [m,y]=p.split('|');
-    return `<option value="${p}">${m} ${y}</option>`;
-  }).join('');
-  if(sorted.length){
-    const last = sorted[sorted.length-1];
-    sel.value = last;
-    [selMonth,selYear] = last.split('|');
+  const now = new Date();
+  const cur = PT_MONTHS[now.getMonth()]+'|'+now.getFullYear();
+  if(!userPicked || !pairs.has(selMonth+'|'+selYear)){
+    const chosen = pairs.has(cur) ? cur : sorted[sorted.length-1];
+    if(chosen){ [selMonth,selYear] = chosen.split('|'); }
   }
-  sel.onchange = ()=>{ [selMonth,selYear]=sel.value.split('|'); renderSales(); };
+  buildFilters(sorted);
 }
-
-/* ═══════════════════════════════════════════════════════════
-   PROCESSAMENTO DE VENDAS
-═══════════════════════════════════════════════════════════ */
-function filterSales(){
-  return salesData.filter(r=>{
-    const m=(r[CFG.C_MONTH]||'').trim(), y=(r[CFG.C_YEAR]||'').trim();
-    return m===selMonth && y===selYear;
-  });
+function buildFilters(sorted){
+  const years = [...new Set(sorted.map(p=>p.split('|')[1]))].sort();
+  const months = sorted.filter(p=>p.split('|')[1]===selYear).map(p=>p.split('|')[0]);
+  $('selYear').innerHTML  = years.map(y=>`<option value="${y}"${y===selYear?' selected':''}>${y}</option>`).join('');
+  $('selMonth').innerHTML = months.map(m=>`<option value="${m}"${m===selMonth?' selected':''}>${m}</option>`).join('');
+}
+function onFilter(fromYear){
+  userPicked = true;
+  const y = $('selYear').value;
+  if(fromYear){
+    // troca de ano: escolhe o último mês disponível daquele ano (ou o mesmo mês, se existir)
+    const months = [...new Set(salesData.filter(r=>(r[CFG.C_YEAR]||'').trim()===y).map(r=>(r[CFG.C_MONTH]||'').trim()))]
+      .filter(Boolean).sort((a,b)=>PT_MONTHS.indexOf(a)-PT_MONTHS.indexOf(b));
+    selYear = y;
+    selMonth = months.includes(selMonth) ? selMonth : months[months.length-1];
+  } else {
+    selMonth = $('selMonth').value; selYear = y;
+  }
+  pickMonth(); renderSales();
+}
+function monthRows(){
+  return salesData.filter(r=>(r[CFG.C_MONTH]||'').trim()===selMonth && (r[CFG.C_YEAR]||'').trim()===selYear);
 }
 function aggregate(rows, col, team){
-  const map={};
-  team.forEach(n=>{ map[n]={name:n,value:0,count:0}; });
+  const map = {};
+  team.forEach(n=>map[n]={name:n,value:0,count:0});
   rows.forEach(r=>{
-    const n=norm((r[col]||'').trim());
-    if(map[n]){ map[n].value+=parseBRL(r[CFG.C_VALUE]); map[n].count++; }
+    const n = norm(r[col]);
+    if(map[n]){ map[n].value += parseBRL(r[CFG.C_VALUE]); map[n].count++; }
   });
   return Object.values(map).sort((a,b)=>b.value-a.value||b.count-a.count);
 }
+/* Social Selling: na coluna "SDR / SS" da planilha, as SS aparecem pelo nome (Layla, Vanessa) */
 function aggregateSocial(rows){
-  const map={};
-  CFG.SOCIAL_SELLERS.forEach(n=>{ map[n]={name:n,value:0,count:0}; });
+  const map = {};
+  CFG.SOCIAL_SELLERS.forEach(n=>map[n]={name:n,value:0,count:0});
   rows.forEach(r=>{
-    const n=norm((r[CFG.C_SOCIAL]||'').trim());
-    if(map[n]){ map[n].value+=parseBRL(r[CFG.C_VALUE]); map[n].count++; }
+    const sdr = norm(r[CFG.C_SDR]);
+    const soc = norm(r[CFG.C_SOCIAL]);
+    let key = '';
+    if(CFG.SOCIAL_SELLERS.includes(sdr)) key = sdr;
+    else if(CFG.SOCIAL_SELLERS.includes(soc)) key = soc;
+    else if(sdr.toUpperCase()===CFG.SS_TAG) key = soc || 'SS (sem nome)';
+    if(!key) return;
+    if(!map[key]) map[key] = {name:key,value:0,count:0};
+    map[key].value += parseBRL(r[CFG.C_VALUE]);
+    map[key].count++;
   });
-  return Object.values(map).sort((a,b)=>b.value-a.value||b.count-a.count);
+  return Object.values(map)
+    .filter(x=>x.name!=='SS (sem nome)' || x.count>0)
+    .sort((a,b)=>b.value-a.value||b.count-a.count);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   PROCESSAMENTO DE AGENDAMENTOS (Firebase)
-═══════════════════════════════════════════════════════════ */
+/* ═══ FIREBASE ═══ */
+function setLive(ok,label){ $('fbDot').className='dot'+(ok?' on':''); $('fbLbl').textContent=label; }
+function initFirebase(){
+  firebase.initializeApp(FB_CFG);
+  const auth = firebase.auth(), db = firebase.firestore();
+  auth.onAuthStateChanged(user=>{
+    if(user){
+      if(fbUnsub) fbUnsub();
+      fbUnsub = db.collection('meetings').orderBy('createdAt','desc').onSnapshot(
+        snap=>{ meetings = snap.docs.map(d=>({id:d.id,...d.data()})); setLive(true,'Ao vivo'); renderAgenda(); },
+        err=>{ setLive(false,'Desconectado'); $('l-agenda').innerHTML=`<div class="msg err">⚠️ Firebase: ${esc(err.message)}</div>`; }
+      );
+    } else {
+      auth.signInAnonymously().catch(err=>{
+        setLive(false,'Erro de auth');
+        $('l-agenda').innerHTML=`<div class="msg err">⚠️ Falha na autenticação Firebase: ${esc(err.message)}</div>`;
+      });
+    }
+  });
+}
 function aggregateAgenda(){
-  const allSchedulers = [...CFG.AG_SDR,...CFG.AG_SOCIAL];
-  const map={};
-  allSchedulers.forEach(n=>{ map[n]={name:n,total:0,realizado:0,cancelado:0,noshow:0}; });
-
-  // Filtra pela bookingDate dentro da semana selecionada
+  const map = {};
+  [...CFG.AG_SDR,...CFG.AG_SOCIAL].forEach(n=>{ if(!map[n]) map[n]={name:n,total:0,realizado:0}; });
   meetings.forEach(m=>{
-    const bookDate = m.bookingDate || (m.createdAt ? m.createdAt.slice(0,10) : '') || m.date || '';
-    if(!inWeek(bookDate, weekOffset)) return;
-    const n = norm((m.schedulerName||'').trim());
-    if(!map[n]) map[n]={name:n,total:0,realizado:0,cancelado:0,noshow:0};
+    const d = m.bookingDate || (m.createdAt ? String(m.createdAt).slice(0,10) : '') || m.date || '';
+    if(!inWeek(d)) return;
+    const n = norm(m.schedulerName);
+    if(!map[n]) map[n]={name:n,total:0,realizado:0};
     map[n].total++;
     if(m.status==='realizado') map[n].realizado++;
-    if(m.status==='cancelado') map[n].cancelado++;
-    if(m.status==='noshow')    map[n].noshow++;
   });
-
   return Object.values(map).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
 }
 
-/* ═══════════════════════════════════════════════════════════
-   RENDER — VENDAS
-═══════════════════════════════════════════════════════════ */
-function renderSales(){
-  const rows  = filterSales();
-  const label = `${selMonth} ${selYear}`;
-  q('ttl-closers').textContent = `RANKING DE CLOSERS · ${label}`;
-  q('ttl-sdrs').textContent    = `RANKING DE SDRs · ${label}`;
-  q('ttl-social').textContent  = `RANKING SOCIAL SELLERS · ${label}`;
-
-  const closers = aggregate(rows,CFG.C_CLOSER,CFG.CLOSERS);
-  const sdrs    = aggregate(rows,CFG.C_SDR,   CFG.SDRS);
-  const social  = aggregateSocial(rows);
-
-  renderStats('st-closers',[
-    {val:fmtBRL(closers.reduce((s,x)=>s+x.value,0)),lbl:'Fechado no mês'},
-    {val:closers.reduce((s,x)=>s+x.count,0),        lbl:'Contratos'},
-  ]);
-  renderStats('st-sdrs',[
-    {val:fmtBRL(sdrs.reduce((s,x)=>s+x.value,0)),lbl:'Volume gerado'},
-    {val:sdrs.reduce((s,x)=>s+x.count,0),        lbl:'Leads fechados'},
-  ]);
-  renderStats('st-social',[
-    {val:fmtBRL(social.reduce((s,x)=>s+x.value,0)),lbl:'Volume social'},
-    {val:social.reduce((s,x)=>s+x.count,0),        lbl:'Contratos'},
-  ]);
-
-  renderRanking('body-closers',closers,r=>({
-    main:fmtBRL(r.value), sub:`${r.count} contrato${r.count!==1?'s':''}`,
-  }),'value','closer');
-  renderRanking('body-sdrs',sdrs,r=>({
-    main:fmtBRL(r.value), sub:`${r.count} lead${r.count!==1?'s':''}`,
-  }),'value','sdr');
-  renderRanking('body-social',social,r=>({
-    main:r.value>0?fmtBRL(r.value):'—', sub:`${r.count} contrato${r.count!==1?'s':''}`,
-  }),'value','social');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   RENDER — AGENDAMENTOS
-═══════════════════════════════════════════════════════════ */
-function renderAgenda(){
-  q('weekLabel').textContent = weekLabel(weekOffset);
-
-  const data  = aggregateAgenda();
-  const total = data.reduce((s,x)=>s+x.total,0);
-  const real  = data.reduce((s,x)=>s+x.realizado,0);
-
-  renderStats('st-agenda',[
-    {val:total, lbl:'Agendamentos na semana'},
-    {val:real,  lbl:'Realizados'},
-    {val:data.filter(x=>x.total>0).length, lbl:'Agendadores ativos'},
-  ]);
-
-  renderRanking('body-agenda',data,r=>({
-    main:`${r.total} agend.`,
-    sub: r.realizado>0 ? `${r.realizado} realizado${r.realizado!==1?'s':''}` : `0 realizados`,
-  }),'total','agenda');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   RENDER HELPERS
-═══════════════════════════════════════════════════════════ */
-function renderStats(id,items){
-  q(id).innerHTML = items.map(i=>`
-    <div class="stat-box">
-      <div class="stat-val">${i.val}</div>
-      <div class="stat-lbl">${i.lbl}</div>
-    </div>`).join('');
-}
-
-function renderRanking(id,data,metricFn,sortKey,context){
-  const el = q(id);
-  if(!data.length){
-    el.innerHTML=emptyHTML('Sem dados','Nenhum registro encontrado para este período.');
-    return;
-  }
-
-  const MEDALS=['🥇','🥈','🥉'];
-  const maxVal = (data[0]||{})[sortKey]||1;
-
-  const html = data.map((r,i)=>{
-    const pos    = i+1;
-    const rClass = pos<=3?`r${pos}`:'';
-    const bClass = pos<=3?`p${pos}`:'pn';
-    const medal  = MEDALS[i]||pos;
-    const pct    = maxVal>0 ? Math.round(((r[sortKey]||0)/maxVal)*100) : 0;
-    const m      = metricFn(r);
-    const photo  = CFG.PHOTOS[r.name];
-    const isZero = (r[sortKey]||0)===0;
-
-    // role chip
-    const role = ROLES[r.name];
-    let roleChip = '';
-    if(context==='agenda' && role){
-      const cls = role==='SDR'?'role-sdr':'role-social';
-      roleChip = `<span class="role-chip ${cls}">${role}</span>`;
-    }
-
-    return `
-      <div class="rank-card ${rClass}${isZero?' zero':''}">
-        <div class="badge ${bClass}">${medal}</div>
-        <div class="av-wrap">
-          ${photo
-            ? `<img class="avatar" src="${photo}" alt="${r.name}"
-                    onerror="this.style.display='none';this.nextElementSibling.classList.add('show')"/>
-               <div class="av-fallback">${r.name.charAt(0)}</div>`
-            : `<div class="av-fallback show">${r.name.charAt(0)}</div>`
-          }
-        </div>
-        <div class="p-info">
-          <div class="p-name">${r.name}</div>
-          ${roleChip}
-          <div class="bar"><div class="bar-fill" data-pct="${pct}" style="width:0%"></div></div>
-        </div>
-        <div class="p-metric">
-          <div class="m-val">${m.main}</div>
-          <div class="m-sub">${m.sub}</div>
-        </div>
-      </div>`;
+/* ═══ RENDER ═══ */
+function renderRanking(id, data, metricFn, key, showRole){
+  const el = $(id);
+  el.classList.toggle('compact', !!showRole);
+  if(!data.length){ el.innerHTML='<div class="msg">Sem dados para este período.</div>'; return; }
+  const max = (data[0]||{})[key] || 1;
+  el.innerHTML = data.map((r,i)=>{
+    const pos = i+1, cls = pos<=3 ? 'r'+pos : '';
+    const m = metricFn(r), pct = max>0 ? Math.round(((r[key]||0)/max)*100) : 0;
+    const photo = CFG.PHOTOS[r.name], init = esc(r.name.charAt(0));
+    const role = showRole ? ROLES[r.name] : '';
+    const chip = role ? `<span class="chip ${role==='SDR'?'sdr':'ss'}">${role}</span>` : '';
+    const av = photo
+      ? `<img src="${photo}" data-n="${esc(r.name)}" data-t="0" alt="${esc(r.name)}" onerror="photoFail(this)"/><div class="fb">${init}</div>`
+      : `<div class="fb show">${init}</div>`;
+    return `<div class="card ${cls}${(r[key]||0)===0?' zero':''}">
+      <div class="pos">${pos}</div>
+      <div class="av">${av}</div>
+      <div class="info"><div class="nm">${esc(r.name)}${chip}</div><div class="bar"><i data-pct="${pct}"></i></div></div>
+      <div class="mt"><div class="mv">${m.main}</div><div class="ms">${m.sub}</div></div>
+    </div>`;
   }).join('');
+  requestAnimationFrame(()=>el.querySelectorAll('.bar i').forEach(b=>b.style.width=b.dataset.pct+'%'));
+}
+/* tenta caminhos alternativos da pasta de fotos antes de mostrar a inicial */
+const PHOTO_DIRS = ['img/','Index/img/','Index/','images/','fotos/','assets/','./'];
+function photoFail(img){
+  const name = img.dataset.n, base = (CFG.PHOTOS[name]||'').split('/').pop();
+  const t = +img.dataset.t + 1;
+  if(base && t < PHOTO_DIRS.length){ img.dataset.t = t; img.src = PHOTO_DIRS[t] + base; return; }
+  img.style.display='none'; img.nextElementSibling.classList.add('show');
+}
+const plural = (n,s,p)=>`${n} ${n===1?s:p}`;
 
-  el.innerHTML = `<div class="rank-list">${html}</div>`;
+function renderSales(){
+  const rows = monthRows();
+  const closers = aggregate(rows,CFG.C_CLOSER,CFG.CLOSERS);
+  const sdrs    = aggregate(rows,CFG.C_SDR,CFG.SDRS);
+  const social  = aggregateSocial(rows);
+  const sum = (a,k)=>a.reduce((s,x)=>s+x[k],0);
 
-  // Animar barras
-  requestAnimationFrame(()=>{
-    el.querySelectorAll('.bar-fill').forEach(b=>{ b.style.width=b.dataset.pct+'%'; });
-  });
+  $('s-closers').innerHTML = `Recebido <b>${fmtBRL(sum(closers,'value'))}</b> · ${plural(sum(closers,'count'),'contrato','contratos')}`;
+  $('s-sdrs').innerHTML    = `Recebido <b>${fmtBRL(sum(sdrs,'value'))}</b> · ${plural(sum(sdrs,'count'),'lead','leads')}`;
+  $('s-social').innerHTML  = `Recebido <b>${fmtBRL(sum(social,'value'))}</b> · ${plural(sum(social,'count'),'contrato','contratos')}`;
+
+  renderRanking('l-closers',closers,r=>({main:fmtBRL(r.value),sub:plural(r.count,'contrato','contratos')}),'value');
+  renderRanking('l-sdrs',sdrs,r=>({main:fmtBRL(r.value),sub:plural(r.count,'lead','leads')}),'value');
+  renderRanking('l-social',social,r=>({main:fmtBRL(r.value),sub:plural(r.count,'contrato','contratos')}),'value');
+}
+function renderAgenda(){
+  $('weekLbl').textContent = weekLabel();
+  const data = aggregateAgenda();
+  const total = data.reduce((s,x)=>s+x.total,0), real = data.reduce((s,x)=>s+x.realizado,0);
+  $('s-agenda').innerHTML = `<b>${total}</b> agend. · <b>${real}</b> realiz.`;
+  renderRanking('l-agenda',data,r=>({
+    main:`${r.total} agend.`, sub:plural(r.realizado,'realizado','realizados')
+  }),'total',true);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   NAVEGAÇÃO DE SEMANA
-═══════════════════════════════════════════════════════════ */
-function shiftWeek(delta){
-  weekOffset = delta===0 ? 0 : weekOffset+delta;
-  renderAgenda();
+/* ═══ RELÓGIO, TELA ACESA, INIT ═══ */
+function tick(){
+  $('clk').textContent = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 }
-
-/* ═══════════════════════════════════════════════════════════
-   TABS
-═══════════════════════════════════════════════════════════ */
-document.getElementById('tabsNav').addEventListener('click',e=>{
-  const tab=e.target.closest('[data-tab]');
-  if(!tab) return;
-  const name=tab.dataset.tab;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===tab));
-  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${name}`));
-});
-
-/* ═══════════════════════════════════════════════════════════
-   ESTADOS DE LOADING / ERRO
-═══════════════════════════════════════════════════════════ */
-function showSpinner(sec){
-  q(`body-${sec}`).innerHTML=`<div class="loading-wrap"><div class="spinner"></div><div class="loading-txt">Carregando…</div></div>`;
+async function keepAwake(){
+  try{
+    if('wakeLock' in navigator){
+      await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') navigator.wakeLock.request('screen').catch(()=>{}); });
+    }
+  }catch(e){}
 }
-function showErr(sec,msg){
-  q(`body-${sec}`).innerHTML=errHTML(msg);
+async function manualRefresh(){
+  const b=$('btnRef'), i=$('refIco');
+  b.disabled=true; i.classList.add('spin');
+  await loadSales();
+  b.disabled=false; i.classList.remove('spin');
 }
-function errHTML(msg){
-  return `<div class="err-box">⚠️ ${msg}</div>`+
-    emptyHTML('Erro ao carregar','Verifique se a planilha está pública ("Qualquer pessoa com o link pode ver") e clique em Atualizar.');
-}
-function emptyHTML(title,text){
-  return `<div class="empty"><div class="empty-ico">📊</div><div class="empty-ttl">${title}</div><div class="empty-txt">${text}</div></div>`;
-}
-function fmtErr(e){
-  if((e.message||'').includes('Failed to fetch'))
-    return 'Falha de rede. Confirme que a planilha está compartilhada como pública.';
-  return e.message||'Erro desconhecido';
-}
-function q(id){ return document.getElementById(id); }
-
-/* ═══════════════════════════════════════════════════════════
-   INIT
-═══════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded',()=>{
-  initFirebase();    // Firebase em tempo real
-  refreshAll();      // Google Sheets
+  $('btnRef').addEventListener('click',manualRefresh);
+  $('selMonth').addEventListener('change',()=>onFilter(false));
+  $('selYear').addEventListener('change',()=>onFilter(true));
+  // esconde o cursor após 4 s parado (modo TV); reaparece ao mexer o mouse
+  let idleT; const wake=()=>{ document.body.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>document.body.classList.add('idle'),4000); };
+  document.addEventListener('mousemove',wake); wake();
+  tick(); setInterval(tick,15000);
+  initFirebase();
+  loadSales(); setInterval(loadSales,CFG.REFRESH_SHEET_MS);
+  renderAgenda();
+  setInterval(renderAgenda,300000);   // recalcula a semana na virada
+  keepAwake();
+  // F ou clique duplo: tela cheia
+  const fs=()=>{ if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); };
+  document.addEventListener('dblclick',fs);
+  document.addEventListener('keydown',e=>{ if(e.key==='f'||e.key==='F') fs(); });
 });
 </script>
 </body>
