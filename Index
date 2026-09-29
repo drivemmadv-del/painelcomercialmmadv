@@ -50,6 +50,14 @@ body.idle{cursor:none;}
 .dot.on{background:#4ade80;animation:pulse 1.6s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
+/* TOTAL RECEBIDO */
+.total{flex:0 0 auto;margin:1.4vh 1vw 0;padding:1.3vh 1.6vw;display:flex;align-items:center;justify-content:space-between;gap:1.5vw;
+  background:linear-gradient(135deg,rgba(197,162,74,.14),rgba(11,26,46,.85) 55%);
+  border:1px solid var(--bord2);border-radius:1.2vh;box-shadow:0 0 2.4vh rgba(197,162,74,.08);}
+.total-l{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.9vh;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:.7vw;}
+.total-p{font-weight:700;color:var(--muted);letter-spacing:.04em;text-transform:none;font-size:1.6vh;}
+.total-v{font-family:'Montserrat',sans-serif;font-weight:900;font-size:5.4vh;line-height:1;color:var(--goldl);white-space:nowrap;}
+
 /* GRID */
 .grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1.2fr;gap:1.2vh 1vw;padding:1.4vh 1vw 1.4vh;}
 .box{min-height:0;min-width:0;display:flex;flex-direction:column;background:rgba(11,26,46,.7);
@@ -129,6 +137,11 @@ body.idle{cursor:none;}
   <div class="live"><span class="dot" id="fbDot"></span><span id="fbLbl">Conectando…</span></div>
   <div class="clock"><span id="clk">--:--</span><small id="upd">Aguardando dados…</small></div>
 </header>
+
+<section class="total" aria-label="Valor total recebido">
+  <div class="total-l">💰 Valor total recebido <span class="total-p" id="totalPeriod"></span></div>
+  <div class="total-v" id="totalVal">R$ 0</div>
+</section>
 
 <main class="grid">
   <section class="box">
@@ -405,6 +418,9 @@ const plural = (n,s,p)=>`${n} ${n===1?s:p}`;
 
 function renderSales(){
   const rows = monthRows();
+  /* Total recebido no mês: soma de VALOR RECEBIDO de todas as linhas do período (independe do ranking) */
+  $('totalVal').textContent = fmtBRL(rows.reduce((t,r)=>t+parseBRL(r[CFG.C_VALUE]),0));
+  $('totalPeriod').textContent = '· '+selMonth+' '+selYear;
   const closers = aggregate(rows,CFG.C_CLOSER,CFG.CLOSERS);
   const sdrs    = aggregate(rows,CFG.C_SDR,CFG.SDRS);
   const social  = aggregateSocial(rows);
