@@ -167,6 +167,7 @@ body.idle{cursor:none;}
 const CFG = {
   SHEET_ID:   '1KxhE62RLnjrCd5aPuwQAChcCXIJddATF75P-FLL3Whc',
   SHEET_NAME: 'Base',
+  SHEET_GID:  '7050523',           // id da aba Base (o número depois de gid= no link da planilha)
   // Cabeçalhos (comparados sem espaços nas pontas)
   C_VALUE:  'VALOR RECEBIDO',      // coluna C
   C_SDR:    'SDR?',
@@ -243,11 +244,28 @@ function weekLabel(){
 }
 
 /* ═══ PLANILHA ═══ */
+/* Lê a aba pela exportação CSV, que traz todas as linhas mesmo quando alguém deixa um filtro
+   ligado na planilha. O endereço antigo (gviz) fica como reserva: ele só devolve as linhas visíveis. */
+async function fetchSheetText(){
+  const base = `https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}`;
+  const urls = [
+    `${base}/export?format=csv&gid=${CFG.SHEET_GID}`,
+    `${base}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CFG.SHEET_NAME)}`,
+  ];
+  let lastErr;
+  for(const url of urls){
+    try{
+      const res = await fetch(url,{cache:'no-store'});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const text = await res.text();
+      if(/^\s*<(!doctype|html)/i.test(text)) throw new Error('A planilha não está pública');
+      return text;
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr;
+}
 async function fetchSheet(){
-  const url = `https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CFG.SHEET_NAME)}`;
-  const res = await fetch(url,{cache:'no-store'});
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const text = await res.text();
+  const text = await fetchSheetText();
   return new Promise((ok,fail)=>Papa.parse(text,{
     header:true, skipEmptyLines:true,
     transformHeader:h=>h.trim(),
@@ -391,11 +409,11 @@ function renderRanking(id, data, metricFn, key, showRole){
   el.innerHTML = data.map((r,i)=>{
     const pos = i+1, cls = pos<=3 ? 'r'+pos : '';
     const m = metricFn(r), pct = max>0 ? Math.round(((r[key]||0)/max)*100) : 0;
-    const photo = CFG.PHOTOS[r.name], init = esc(r.name.charAt(0));
+    const photo = PHOTO_BAD.has(r.name) ? '' : (PHOTO_OK[r.name] || CFG.PHOTOS[r.name]), init = esc(r.name.charAt(0));
     const role = showRole ? ROLES[r.name] : '';
     const chip = role ? `<span class="chip ${role==='SDR'?'sdr':'ss'}">${role}</span>` : '';
     const av = photo
-      ? `<img src="${photo}" data-n="${esc(r.name)}" data-t="0" alt="${esc(r.name)}" onerror="photoFail(this)"/><div class="fb">${init}</div>`
+      ? `<img src="${photo}" data-n="${esc(r.name)}" data-t="0" alt="${esc(r.name)}" onerror="photoFail(this)" onload="PHOTO_OK[this.dataset.n]=this.getAttribute('src')"/><div class="fb">${init}</div>`
       : `<div class="fb show">${init}</div>`;
     return `<div class="card ${cls}${(r[key]||0)===0?' zero':''}">
       <div class="pos">${pos}</div>
@@ -407,11 +425,13 @@ function renderRanking(id, data, metricFn, key, showRole){
   requestAnimationFrame(()=>el.querySelectorAll('.bar i').forEach(b=>b.style.width=b.dataset.pct+'%'));
 }
 /* tenta caminhos alternativos da pasta de fotos antes de mostrar a inicial */
+const PHOTO_BAD = new Set(), PHOTO_OK = {};   // evita pedir de novo, a cada atualização, foto que não existe
 const PHOTO_DIRS = ['img/','Index/img/','Index/','images/','fotos/','assets/','./'];
 function photoFail(img){
   const name = img.dataset.n, base = (CFG.PHOTOS[name]||'').split('/').pop();
   const t = +img.dataset.t + 1;
   if(base && t < PHOTO_DIRS.length){ img.dataset.t = t; img.src = PHOTO_DIRS[t] + base; return; }
+  PHOTO_BAD.add(name);
   img.style.display='none'; img.nextElementSibling.classList.add('show');
 }
 const plural = (n,s,p)=>`${n} ${n===1?s:p}`;
