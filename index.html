@@ -184,8 +184,6 @@ const CFG = {
   AG_SDR:    ['Izabel','Kelly','Laís','Júlia'],
   AG_SOCIAL: ['Daniel','Camila','Layla','Vanessa'],
 
-  REFRESH_SHEET_MS: 60000,   // recarrega a planilha a cada 60 s
-
   PHOTOS: {
     'Malu':'img/malu-prado.png','Léo':'img/leo-marcondes.png','Laís':'img/lais-pena.png',
     'Franklin':'img/franklin-marques.png','Júlia':'img/julia-borges.png','Kelly':'img/kelly-cardoso.png',
@@ -293,7 +291,7 @@ async function loadSales(){
     ['closers','sdrs','social'].forEach(k=>{ if(!salesData.length) $('l-'+k).innerHTML=`<div class="msg err">⚠️ ${esc(msg)}</div>`; });
   }
 }
-/* Filtros de mês e ano. Padrão: mês atual; a escolha do usuário é mantida nas atualizações automáticas. */
+/* Filtros de mês e ano. Padrão: mês atual; a escolha do usuário é mantida nas atualizações manuais. */
 let userPicked = false;
 function pickMonth(){
   const pairs = new Set();
@@ -491,7 +489,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.addEventListener('mousemove',wake); wake();
   tick(); setInterval(tick,15000);
   initFirebase();
-  loadSales(); setInterval(loadSales,CFG.REFRESH_SHEET_MS);
+  loadSales();
   renderAgenda();
   setInterval(renderAgenda,300000);   // recalcula a semana na virada
   keepAwake();
