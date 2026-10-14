@@ -81,57 +81,49 @@ module.exports = async (req, res) => {
     if (action === 'explore') {
       const start = (req.query && req.query.start) || '2026-10-01';
       const end = (req.query && req.query.end) || '2026-10-14';
-      const out = { start, end };
-      const uRes = await clint('/v1/users', { limit: 200 });
-      const names = {};
-      rows(uRes).forEach((u) => { names[u.id] = ((u.first_name || '') + ' ' + (u.last_name || '')).trim(); });
-      out.userNames = names;
+      const out = {};
       const oRes = await clint('/v1/origins', { limit: 200 });
-      const origs = rows(oRes).filter((o) => /^VENDAS (SDR|SOCIAL SELLER|CLOSER)/.test((o.name || '').trim()));
-      out.deals = [];
-      for (const o of origs) {
-        for (const st of ['OPEN', 'WON', 'LOST']) {
-          const r = await clint('/v1/deals', { origin_id: o.id, status: st, created_at_start: start + 'T00:00:00-03:00', created_at_end: end + 'T23:59:59-03:00', limit: 200 });
-          const list = rows(r);
-          const byUser = {};
-          list.forEach((d) => { const uid = (d.user && d.user.id) || 'sem'; byUser[uid] = (byUser[uid] || 0) + 1; });
-          out.deals.push({ origin: o.name.trim(), status: st, totalCount: r.totalCount, page: list.length, userShape: list[0] ? shape(list[0].user) : null, byUser });
-        }
+      const sdr = rows(oRes).find((o) => (o.name || '').trim() === 'VENDAS SDR');
+      const dq = { origin_id: sdr.id, status: 'OPEN', created_at_start: start + 'T00:00:00-03:00', created_at_end: end + 'T23:59:59-03:00' };
+      const d1000 = await clint('/v1/deals', Object.assign({ limit: 1000 }, dq));
+      const list = rows(d1000);
+      out.limit1000 = { total: d1000.totalCount, got: list.length, pages: d1000.totalPages };
+      const ds = list.map((d) => d.created_at).sort();
+      out.createdRange = [ds[0], ds[ds.length - 1]];
+      out.dealKeys = list[0] ? Object.keys(list[0]) : [];
+      out.contactShape = list[0] ? shape(list[0].contact) : null;
+      out.fieldsKeys = list[0] && list[0].fields ? Object.keys(list[0].fields).slice(0, 20) : [];
+      out.samples = [];
+      for (const d of list.slice(0, 5)) {
+        const o = { dealCreated: d.created_at, stage: d.stage };
+        try {
+          const cc = await clint('/v2/chats/contact/' + d.contact.id, { limit: 20 });
+          const chs = rows(cc);
+          o.chats = chs.map((c) => ({ created: c.created_at, firstCust: c.first_customer_message_at, firstResp: c.first_response_at, ch: c.channel_account_id.slice(0, 4), user: c.user_id ? 'u' : '-' }));
+          if (chs[0]) {
+            const m1 = await clint('/v2/messages/chat/' + chs[0].id, { limit: 100 });
+            const ms = rows(m1);
+            o.msgMeta = { total: m1.total_count, pages: m1.total_pages, got: ms.length, first: ms[0] && ms[0].created_at, last: ms.length && ms[ms.length - 1].created_at };
+            o.msgs = ms.map((x) => [x.type, x.content_type, x.source, x.user_id ? 'u' : '-', x.created_at]).slice(-12);
+          }
+        } catch (e) { o.error = e.message; }
+        out.samples.push(o);
       }
       const ch = await clint('/v2/channel-accounts', { limit: 50 });
-      out.chats = [];
-      for (const acc of rows(ch)) {
-        const variants = {
-          none: {},
-          created: { created_at_start: start + 'T00:00:00-03:00', created_at_end: end + 'T23:59:59-03:00' },
-          created2: { start_date: start, end_date: end },
-        };
-        const o = { account: acc.name, type: acc.type };
-        for (const k of Object.keys(variants)) {
-          try {
-            const r = await clint('/v2/chats/channel-account/' + acc.id, Object.assign({ limit: 100 }, variants[k]));
-            o[k] = { total: r.total_count, pages: r.total_pages, got: rows(r).length };
-          } catch (e) { o[k] = { error: e.message }; }
-        }
-        const r = await clint('/v2/chats/channel-account/' + acc.id, { limit: 60 });
-        const list = rows(r);
-        const diffs = [];
-        let nullFirst = 0, withUser = 0;
-        list.forEach((c) => {
-          if (c.user_id) withUser++;
-          if (!c.first_response_at) { nullFirst++; return; }
-          if (c.first_customer_message_at) diffs.push(Math.round((new Date(c.first_response_at) - new Date(c.first_customer_message_at)) / 60000));
-        });
-        o.sample = { n: list.length, withUser, nullFirstResponse: nullFirst, diffMinutes: diffs.slice(0, 30), newest: list[0] && list[0].created_at, oldest: list.length && list[list.length - 1].created_at };
-        o.msgs = [];
-        for (const c of list.slice(0, 4)) {
-          try {
-            const m = await clint('/v2/messages/chat/' + c.id, { limit: 12 });
-            o.msgs.push(rows(m).map((x) => [x.type, x.sent, x.source, x.content_type, x.user_id ? 'u' : '-', x.created_at]));
-          } catch (e) { o.msgs.push('erro ' + e.message); }
-        }
-        out.chats.push(o);
+      const acc = rows(ch).find((a) => a.type === 'WHATSAPP');
+      out.chatParams = {};
+      const tests = { user_id: { user_id: '9c71d887-94a5-46f1-a7ef-0a4dbc0ca9ef' }, last_message_at_start: { last_message_at_start: start + 'T00:00:00-03:00' }, updated_at_start: { updated_at_start: start + 'T00:00:00-03:00' }, first_response_at_start: { first_response_at_start: start + 'T00:00:00-03:00' }, created_at_from: { created_at_from: start }, from: { from: start, to: end }, status: { status: 'OPEN' } };
+      for (const k of Object.keys(tests)) {
+        try {
+          const r = await clint('/v2/chats/channel-account/' + acc.id, Object.assign({ limit: 5 }, tests[k]));
+          out.chatParams[k] = r.total_count;
+        } catch (e) { out.chatParams[k] = 'erro ' + e.message.slice(0, 80); }
       }
+      try {
+        const dl = await clint('/v2/dashboards', { limit: 50 });
+        out.dashboardsShape = shape(dl);
+        out.dashboards = rows(dl).map((d) => ({ id: d.id, name: d.name }));
+      } catch (e) { out.dashboardsError = e.message; }
       return res.status(200).json(out);
     }
     return res.status(400).json({ error: 'action inválida' });
