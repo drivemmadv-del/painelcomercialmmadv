@@ -96,13 +96,15 @@ module.exports = async (req, res) => {
       if (!c.first_response_at) return;
       if (c.created_at && Date.parse(c.created_at) > endMs) return;
       total++;
-      if (hash(String(c.id)) % of === shard) mine.push({ c });
+      if (hash(String(c.id)) % of === shard) mine.push({ c, h: hash('~' + String(c.id)) });
     }));
 
-    const deadline = Date.now() + 52000;
+    /* Ordem pseudoaleatória: se o tempo ou o limite do Clint cortar a leitura, o que foi lido é uma amostra sem viés */
+    mine.sort((a, b) => a.h - b.h);
+    const deadline = Date.now() + 48000;
     const byUser = {}; /* uid -> { 'AAAA-MM-DD': conversas distintas } */
     let done = 0;
-    await pool(mine, 6, async (it) => {
+    await pool(mine, 4, async (it) => {
       if (Date.now() > deadline) { it.skipped = true; return; }
       const seen = new Set();
       for (let page = 1; page <= 30; page++) {
@@ -130,7 +132,9 @@ module.exports = async (req, res) => {
 
     const pending = mine.filter((x) => x.skipped || x.failed).length;
     /* Dias já encerrados não mudam: ficam em cache por 1 dia; o dia de hoje por 5 minutos */
-    res.setHeader('Cache-Control', pending ? 'no-store' : (end < todayBR ? 'public, s-maxage=86400, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600'));
+    /* Guarda em cache se a leitura foi completa ou ao menos uma amostra grande (>= 30% da fatia) */
+    const okSample = mine.length === 0 || done >= mine.length * 0.3;
+    res.setHeader('Cache-Control', !okSample ? 'no-store' : (end < todayBR ? 'public, s-maxage=86400, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600'));
     return res.status(200).json({
       generatedAt: new Date().toISOString(), start, end, days, shard, of,
       chatsTotal: total, chatsInShard: mine.length, processed: done, pending, byUser,
