@@ -118,6 +118,34 @@ body.idle{cursor:none;}
 .list.compact .bar{margin-top:.3vh;height:.4vh;}
 .list.compact .mv{font-size:1.7vh;}
 .list.compact .ms{font-size:1vh;margin-top:0;}
+
+/* ABA TAXAS */
+.views{display:flex;gap:.3vw;margin-left:1.2vw;background:var(--surf2);border:1px solid var(--bord2);border-radius:1vh;padding:.3vh;}
+.vbtn{background:transparent;border:none;color:var(--muted);padding:.8vh 1vw;border-radius:.8vh;cursor:pointer;
+  font-family:'Montserrat',sans-serif;font-size:1.6vh;font-weight:800;letter-spacing:.04em;white-space:nowrap;}
+.vbtn.on{background:linear-gradient(135deg,var(--goldd),var(--gold));color:#040d19;}
+.vbtn:not(.on):hover{color:var(--text);}
+body[data-view="taxas"] .total, body[data-view="taxas"] .grid{display:none;}
+body:not([data-view="taxas"]) #taxas{display:none;}
+.taxas{flex:1;min-height:0;overflow:auto;padding:1.4vh 1vw 2vh;}
+.tx-box{background:rgba(11,26,46,.7);border:1px solid var(--bord);border-radius:1.2vh;padding:1.1vh 1vw 1.2vh;margin-bottom:1.4vh;}
+.tx-note{font-size:1.35vh;color:var(--muted);margin:0 0 1vh;line-height:1.5;}
+.tx-note.err{color:#ff8888;}
+.tx-wrap{overflow-x:auto;}
+table.tx{width:100%;border-collapse:separate;border-spacing:0 .5vh;font-size:1.7vh;min-width:880px;}
+table.tx th{font-family:'Montserrat',sans-serif;font-size:1.2vh;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);text-align:right;padding:.4vh .7vw;white-space:nowrap;vertical-align:bottom;}
+table.tx th:first-child, table.tx td:first-child{text-align:left;}
+table.tx td{background:var(--surf);padding:1.1vh .7vw;text-align:right;white-space:nowrap;font-family:'Montserrat',sans-serif;font-weight:700;
+  border-top:1px solid var(--bord);border-bottom:1px solid var(--bord);}
+table.tx td:first-child{border-left:1px solid var(--bord);border-radius:1vh 0 0 1vh;display:flex;align-items:center;gap:.7vw;}
+table.tx td:last-child{border-right:1px solid var(--bord);border-radius:0 1vh 1vh 0;}
+table.tx td.dim{color:var(--muted);font-weight:500;}
+table.tx td.val{color:var(--goldl);}
+table.tx tr.tot td{background:rgba(197,162,74,.12);border-color:var(--bord2);color:var(--gold);}
+table.tx .mini{width:3.6vh;height:3.6vh;border-radius:50%;object-fit:cover;border:.2vh solid var(--bord2);flex:0 0 auto;}
+table.tx .mini.fb{display:flex;align-items:center;justify-content:center;background:var(--surf2);color:var(--gold);font-size:1.6vh;}
+@media (max-aspect-ratio:1/1){ .views{margin-left:0;} table.tx{font-size:1.5vh;} }
 </style>
 </head>
 <body>
@@ -127,6 +155,10 @@ body.idle{cursor:none;}
   <div>
     <div class="ttl">Painel Comercial</div>
     <div class="sub">MARCONDES MADUREIRA ADVOCACIA</div>
+  </div>
+  <div class="views" role="tablist" aria-label="Visão do painel">
+    <button class="vbtn on" id="vRank" role="tab" type="button">🏆 Ranking</button>
+    <button class="vbtn" id="vTax" role="tab" type="button">📊 Taxas</button>
   </div>
   <div class="hd-sp"></div>
   <div class="filters">
@@ -161,6 +193,20 @@ body.idle{cursor:none;}
     <div class="list" id="l-agenda"><div class="msg">Conectando ao Firebase…</div></div>
   </section>
 </main>
+
+<section class="taxas" id="taxas" aria-label="Taxas por colaborador">
+  <div class="tx-box">
+    <div class="box-hd"><div class="box-t">📞 SDRs e Social Sellers</div><div class="box-s" id="tx-s-sdr"></div></div>
+    <div class="tx-note" id="tx-n-sdr"></div>
+    <div class="tx-wrap" id="tx-sdr"><div class="msg">Carregando…</div></div>
+  </div>
+  <div class="tx-box">
+    <div class="box-hd"><div class="box-t">🏆 Closers</div><div class="box-s" id="tx-s-closer"></div></div>
+    <div class="tx-note" id="tx-n-closer"></div>
+    <div class="tx-wrap" id="tx-closer"><div class="msg">Carregando…</div></div>
+  </div>
+  <div class="tx-note" id="tx-foot"></div>
+</section>
 
 <script>
 /* ═══ CONFIGURAÇÃO ═══ */
@@ -451,6 +497,7 @@ function renderSales(){
   renderRanking('l-closers',closers,r=>({main:fmtBRL(r.value),sub:plural(r.count,'contrato','contratos')}),'value');
   renderRanking('l-sdrs',sdrs,r=>({main:fmtBRL(r.value),sub:plural(r.count,'lead','leads')}),'value');
   renderRanking('l-social',social,r=>({main:fmtBRL(r.value),sub:plural(r.count,'contrato','contratos')}),'value');
+  refreshTaxas();
 }
 function renderAgenda(){
   $('weekLbl').textContent = weekLabel();
@@ -460,6 +507,141 @@ function renderAgenda(){
   renderRanking('l-agenda',data,r=>({
     main:`${r.total} agend.`, sub:plural(r.realizado,'realizado','realizados')
   }),'total',true);
+  refreshTaxas();
+}
+
+
+/* ═══ ABA TAXAS ═══ */
+let clintCache = {}, clintState = {key:'', status:'idle', data:null, error:''};
+const CLINT_TTL = 5*60*1000;
+const isTaxas = () => document.body.dataset.view === 'taxas';
+const firstName = s => norm(String(s||'').trim().split(/\s+/)[0]);
+const monthIdx = () => PT_MONTHS.indexOf(selMonth);
+const pad2 = n => String(n).padStart(2,'0');
+function monthRange(){
+  const m = monthIdx(), y = +selYear;
+  if(m<0 || !y) return null;
+  const last = new Date(y, m+1, 0).getDate();
+  return {start:`${y}-${pad2(m+1)}-01`, end:`${y}-${pad2(m+1)}-${pad2(last)}`};
+}
+const inMonthStr = str => { const r = monthRange(); const d = String(str||'').slice(0,10); return !!r && d >= r.start && d <= r.end; };
+const pct = (a,b) => (b>0 ? (a/b*100) : null);
+const fmtPct = v => v===null ? '—' : v.toFixed(1).replace('.',',')+'%';
+const fmtNum = v => (v===null || v===undefined) ? '—' : String(v);
+const fmtDec = v => (v===null || v===undefined || isNaN(v)) ? '—' : (Math.round(v*10)/10).toString().replace('.',',');
+function fmtMin(v){
+  if(v===null || v===undefined || isNaN(v)) return '—';
+  if(v < 60) return Math.round(v)+' min';
+  const h = Math.floor(v/60), m = Math.round(v%60);
+  return h+'h'+(m? pad2(m):'');
+}
+function saleRows(){ return monthRows(); }
+function salesFor(name, cols){
+  const rows = saleRows().filter(r=>cols.some(c=>norm(r[c])===name));
+  return {count: rows.length, value: rows.reduce((t,r)=>t+parseBRL(r[CFG.C_VALUE]),0)};
+}
+function agendadasBy(name){
+  return meetings.filter(m=>norm(m.schedulerName)===name && inMonthStr(m.bookingDate || (m.createdAt?String(m.createdAt).slice(0,10):'') || m.date)).length;
+}
+function realizadasBy(name){
+  return meetings.filter(m=>norm(m.closer)===name && m.status==='realizado' && inMonthStr(m.date)).length;
+}
+const plain = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+function clintFor(name){
+  const list = (clintState.data && clintState.data.users) || [];
+  const nm = plain(name);
+  if(!nm) return null;
+  return list.find(u=>plain(String(u.name||'').split(/[\s@]/)[0])===nm)
+      || list.find(u=>plain(String(u.email||'').split('@')[0]).startsWith(nm)) || null;
+}
+function avatarMini(name){
+  const photo = PHOTO_BAD.has(name) ? '' : (PHOTO_OK[name] || CFG.PHOTOS[name]);
+  const ini = esc(name.charAt(0));
+  return photo
+    ? `<img class="mini" src="${photo}" alt="${esc(name)}" onerror="this.style.display='none'"/>`
+    : `<span class="mini fb">${ini}</span>`;
+}
+function buildTaxas(){
+  const clintOk = clintState.status==='ok';
+  // SDRs e Social Sellers
+  const names = [...new Set([...CFG.SDRS, ...CFG.SOCIAL_SELLERS, ...CFG.AG_SDR, ...CFG.AG_SOCIAL])]
+    .filter(n=>!CFG.CLOSERS.includes(n) || agendadasBy(n)>0)
+    .filter(n=>CFG.SDRS.includes(n) || CFG.SOCIAL_SELLERS.includes(n) || agendadasBy(n)>0 || (clintFor(n)&&clintFor(n).leads>0));
+  const sdr = names.map(n=>{
+    const v = salesFor(n,[CFG.C_SDR,CFG.C_SOCIAL]), c = clintFor(n);
+    const leads = clintOk && c ? c.leads : null, ag = agendadasBy(n);
+    return {name:n, role:ROLES[n]||(CFG.SOCIAL_SELLERS.includes(n)?'Social Seller':'SDR'),
+      leads, ag, vendas:v.count, valor:v.value,
+      cLA: leads===null?null:pct(ag,leads), cLV: leads===null?null:pct(v.count,leads), cAV: pct(v.count,ag),
+      lpd: c?c.leadsPerDay:null, cpd: c?c.chatsPerDay:null, resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respN: c?c.respCount:0};
+  }).sort((a,b)=>b.valor-a.valor||b.ag-a.ag||a.name.localeCompare(b.name));
+  // Closers
+  const cNames = [...new Set([...CFG.CLOSERS, ...meetings.filter(m=>inMonthStr(m.date)&&m.closer).map(m=>norm(m.closer))])];
+  const closers = cNames.map(n=>{
+    const v = salesFor(n,[CFG.C_CLOSER]), c = clintFor(n), real = realizadasBy(n);
+    return {name:n, neg: clintOk&&c?c.leads:null, real, vendas:v.count, valor:v.value, cRV: pct(v.count,real),
+      lpd: c?c.leadsPerDay:null, cpd: c?c.chatsPerDay:null};
+  }).sort((a,b)=>b.valor-a.valor||b.real-a.real||a.name.localeCompare(b.name));
+  return {sdr, closers};
+}
+function sumK(a,k){ return a.reduce((t,x)=>t+(x[k]||0),0); }
+function renderTaxas(){
+  if(!isTaxas()) return;
+  const {sdr, closers} = buildTaxas();
+  const clintOk = clintState.status==='ok';
+  const th = (...c)=>'<tr>'+c.map(x=>`<th>${x}</th>`).join('')+'</tr>';
+  const cell = (v,cls)=>`<td${cls?` class="${cls}"`:''}>${v}</td>`;
+  const who = r=>`<td>${avatarMini(r.name)}<span>${esc(r.name)}</span>${r.role?`<span class="chip ${r.role==='SDR'?'sdr':'ss'}">${r.role}</span>`:''}</td>`;
+
+  const shown = new Set(sdr.map(r=>r.name));
+  const distinct = saleRows().filter(r=>shown.has(norm(r[CFG.C_SDR])) || shown.has(norm(r[CFG.C_SOCIAL])));
+  const tl = sumK(sdr,'leads'), ta = sumK(sdr,'ag'), tv = distinct.length, tval = distinct.reduce((t,r)=>t+parseBRL(r[CFG.C_VALUE]),0);
+  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Vendas','Leads → Agend.','Leads → Vendas','Agend. → Vendas','Valor recebido','Leads/dia','Conversas/dia (est.)','Tempo de resposta (mediana · média)')}</thead><tbody>`
+    + sdr.map(r=>`<tr>${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.vendas)}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(fmtDec(r.cpd),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell('')}${cell('')}${cell('')}</tr></tbody></table>`
+    : '<div class="msg">Sem dados para este período.</div>';
+
+  const tn = sumK(closers,'neg'), tr = sumK(closers,'real'), tcv = sumK(closers,'vendas'), tcval = sumK(closers,'valor');
+  $('tx-closer').innerHTML = closers.length ? `<table class="tx"><thead>${th('Closer','Negócios (Clint)','Reuniões realizadas','Vendas','Realizadas → Vendas','Valor recebido','Negócios/dia','Conversas/dia (est.)')}</thead><tbody>`
+    + closers.map(r=>`<tr>${who({name:r.name})}${cell(fmtNum(r.neg),r.neg===null?'dim':'')}${cell(r.real)}${cell(r.vendas)}${cell(fmtPct(r.cRV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(fmtDec(r.cpd),'dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tn:'—')}${cell(tr)}${cell(tcv)}${cell(fmtPct(pct(tcv,tr)))}${cell(fmtBRL(tcval))}${cell('')}${cell('')}</tr></tbody></table>`
+    : '<div class="msg">Sem dados para este período.</div>';
+
+  $('tx-s-sdr').innerHTML = `${selMonth} ${selYear}`;
+  $('tx-s-closer').innerHTML = `${selMonth} ${selYear}`;
+  const cn = clintState.status==='loading' ? 'Consultando o Clint…'
+    : clintState.status==='error' ? `<span class="err">⚠️ Clint: ${esc(clintState.error)}</span>` : '';
+  const trunc = clintState.data && clintState.data.truncated ? ' ⚠️ O tempo de resposta foi calculado com parte da amostra (limite de tempo da consulta).' : '';
+  $('tx-n-sdr').innerHTML = cn || 'Leads: negócios criados no mês nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Conversas/dia: estimativa (conversas respondidas × % com resposta humana na amostra).'+trunc+' Agendadas: reuniões marcadas no mês (dia do agendamento). Vendas e valor: planilha, mês da venda. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
+  $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no mês (dia da reunião). Vendas e valor: planilha, mês da venda.';
+  const g = clintState.data && clintState.data.generatedAt ? ' Dados do Clint de '+new Date(clintState.data.generatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'.' : '';
+  $('tx-foot').textContent = 'As taxas cruzam períodos iguais (o mês selecionado), mas uma venda pode vir de um lead de mês anterior.'+g;
+}
+async function loadClint(force){
+  const r = monthRange(); if(!r) return;
+  const key = r.start;
+  const c = clintCache[key];
+  if(!force && c && Date.now()-c.t < CLINT_TTL){ clintState = {key, status:'ok', data:c.data, error:''}; renderTaxas(); return; }
+  if(clintState.key===key && clintState.status==='loading') return;
+  clintState = {key, status:'loading', data:null, error:''};
+  renderTaxas();
+  try{
+    const res = await fetch(`/api/clint?action=metrics&start=${r.start}&end=${r.end}`, {cache:'no-store'});
+    const body = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(body.error || ('HTTP '+res.status));
+    clintCache[key] = {t:Date.now(), data:body};
+    if(clintState.key===key){ clintState = {key, status:'ok', data:body, error:''}; }
+  }catch(e){
+    if(clintState.key===key) clintState = {key, status:'error', data:null, error:e.message||'falha'};
+  }
+  renderTaxas();
+}
+function refreshTaxas(){ if(isTaxas()){ renderTaxas(); const r=monthRange(); if(r && clintState.key!==r.start) loadClint(); } }
+function setView(v){
+  document.body.dataset.view = v;
+  $('vRank').classList.toggle('on', v!=='taxas'); $('vTax').classList.toggle('on', v==='taxas');
+  try{ history.replaceState(null,'', v==='taxas' ? '#taxas' : location.pathname+location.search); }catch(e){}
+  if(v==='taxas') refreshTaxas();
 }
 
 /* ═══ RELÓGIO, TELA ACESA, INIT ═══ */
@@ -478,12 +660,16 @@ async function manualRefresh(){
   const b=$('btnRef'), i=$('refIco');
   b.disabled=true; i.classList.add('spin');
   await loadSales();
+  if(isTaxas()) await loadClint(true);
   b.disabled=false; i.classList.remove('spin');
 }
 document.addEventListener('DOMContentLoaded',()=>{
   $('btnRef').addEventListener('click',manualRefresh);
   $('selMonth').addEventListener('change',()=>onFilter(false));
   $('selYear').addEventListener('change',()=>onFilter(true));
+  $('vRank').addEventListener('click',()=>setView('rank'));
+  $('vTax').addEventListener('click',()=>setView('taxas'));
+  if(location.hash==='#taxas') setView('taxas');
   // esconde o cursor após 4 s parado (modo TV); reaparece ao mexer o mouse
   let idleT; const wake=()=>{ document.body.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>document.body.classList.add('idle'),4000); };
   document.addEventListener('mousemove',wake); wake();
