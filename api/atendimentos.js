@@ -129,7 +129,8 @@ module.exports = async (req, res) => {
     });
 
     const pending = mine.filter((x) => x.skipped || x.failed).length;
-    res.setHeader('Cache-Control', pending ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=600');
+    /* Dias já encerrados não mudam: ficam em cache por 1 dia; o dia de hoje por 5 minutos */
+    res.setHeader('Cache-Control', pending ? 'no-store' : (end < todayBR ? 'public, s-maxage=86400, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600'));
     return res.status(200).json({
       generatedAt: new Date().toISOString(), start, end, days, shard, of,
       chatsTotal: total, chatsInShard: mine.length, processed: done, pending, byUser,
