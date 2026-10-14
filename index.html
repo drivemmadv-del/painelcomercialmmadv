@@ -708,10 +708,9 @@ async function loadAtend(force){
 }
 async function loadClint(force){
   const r = monthRange(); if(!r) return;
-  loadAtend(force);
   const key = r.start;
   const c = clintCache[key];
-  if(!force && c && Date.now()-c.t < CLINT_TTL){ clintState = {key, status:'ok', data:c.data, error:''}; renderTaxas(); return; }
+  if(!force && c && Date.now()-c.t < CLINT_TTL){ clintState = {key, status:'ok', data:c.data, error:''}; renderTaxas(); loadAtend(force); return; }
   if(clintState.key===key && clintState.status==='loading') return;
   clintState = {key, status:'loading', data:null, error:''};
   renderTaxas();
@@ -724,7 +723,7 @@ async function loadClint(force){
   }catch(e){
     if(clintState.key===key) clintState = {key, status:'error', data:null, error:e.message||'falha'};
   }
-  renderTaxas();
+  renderTaxas();  loadAtend(force);
 }
 function refreshTaxas(){ if(isTaxas()){ renderTaxas(); const r=monthRange(); if(r && clintState.key!==r.start) loadClint(); } }
 function setView(v){
