@@ -66,6 +66,30 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, users: rows(u).length });
     }
 
+    if (action === 'debugfast') {
+      res.setHeader('Cache-Control', 'no-store');
+      const start = isoDay(req.query.start) || '2026-10-01';
+      const ca = rows(await clint('/v2/channel-accounts', { limit: 50 }));
+      const out = { samples: [] };
+      for (const a of ca) {
+        const lst = rows(await clint('/v2/chats/channel-account/' + a.id, { limit: 200, last_message_at_start: start + 'T00:00:00' + TZ }));
+        const ok = lst.filter((c) => c.first_response_at && c.first_customer_message_at && c.user_id);
+        const fast = ok.filter((c) => Date.parse(c.first_response_at) - Date.parse(c.first_customer_message_at) < 60000 && Date.parse(c.first_response_at) >= Date.parse(c.first_customer_message_at)).slice(0, 4);
+        const slow = ok.filter((c) => Date.parse(c.first_response_at) - Date.parse(c.first_customer_message_at) > 600000).slice(0, 2);
+        for (const c of fast.concat(slow)) {
+          const m = rows(await clint('/v2/messages/chat/' + c.id, { limit: 100 })).slice().reverse();
+          const t0 = Date.parse(c.first_customer_message_at);
+          const firstUser = m.find((x) => x.type === 'USER');
+          out.samples.push({
+            acc: a.type, kind: Date.parse(c.first_response_at) - t0 < 60000 ? 'fast' : 'slow',
+            n: m.length, userKeys: firstUser ? Object.keys(firstUser) : null,
+            msgs: m.slice(0, 5).map((x) => [x.type, x.content_type, x.source, x.user_id ? 'u' : '-', Math.round((Date.parse(x.created_at) - t0) / 1000), (x.content || '').length]),
+          });
+        }
+      }
+      return res.status(200).json(out);
+    }
+
     if (action === 'metrics') {
       const todayBR = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
       const start = isoDay(req.query.start) || todayBR.slice(0, 8) + '01';
@@ -105,6 +129,7 @@ module.exports = async (req, res) => {
           if (d.contact && d.contact.id) leadContacts.add(d.contact.id);
           if (!d.user || !d.user.id) { unassigned++; return; }
           const u = get(d.user.id, d.user.full_name);
+          if (d.user.full_name) u.name = d.user.full_name;
           u.leads++;
           u.leadsByOrigin[oname] = (u.leadsByOrigin[oname] || 0) + 1;
         });
