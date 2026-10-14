@@ -55,6 +55,35 @@ function median(a) {
 }
 const round1 = (n) => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
 
+
+/* Mensagem humana: enviada por um usuário no Clint (user_id) ou pelo celular (source DEVICE).
+   Respostas automáticas (robô, modelo) vêm como USER sem user_id e source CHAT. */
+const isHuman = (m) => m && m.type === 'USER' && (m.user_id || m.source === 'DEVICE');
+
+async function firstHuman(chatId) {
+  const p1 = await clint('/v2/messages/chat/' + chatId, { limit: 100, page: 1 });
+  const pages = p1.total_pages || 1;
+  let msgs = pages > 1 ? rows(await clint('/v2/messages/chat/' + chatId, { limit: 100, page: pages })) : rows(p1);
+  let h = msgs.slice().reverse().find(isHuman);
+  if (!h && pages > 2) {
+    msgs = rows(await clint('/v2/messages/chat/' + chatId, { limit: 100, page: pages - 1 }));
+    h = msgs.slice().reverse().find(isHuman);
+  }
+  return h || null;
+}
+
+async function pool(items, n, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => {
+    while (i < items.length) {
+      const k = i++;
+      try { out[k] = await fn(items[k], k); } catch (e) { out[k] = undefined; }
+    }
+  }));
+  return out;
+}
+
 function isoDay(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : null; }
 
 module.exports = async (req, res) => {
@@ -64,30 +93,6 @@ module.exports = async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       const u = await clint('/v1/users', { limit: 1 });
       return res.status(200).json({ ok: true, users: rows(u).length });
-    }
-
-    if (action === 'debugfast') {
-      res.setHeader('Cache-Control', 'no-store');
-      const start = isoDay(req.query.start) || '2026-10-01';
-      const ca = rows(await clint('/v2/channel-accounts', { limit: 50 }));
-      const out = { samples: [] };
-      for (const a of ca) {
-        const lst = rows(await clint('/v2/chats/channel-account/' + a.id, { limit: 200, last_message_at_start: start + 'T00:00:00' + TZ }));
-        const ok = lst.filter((c) => c.first_response_at && c.first_customer_message_at && c.user_id);
-        const fast = ok.filter((c) => Date.parse(c.first_response_at) - Date.parse(c.first_customer_message_at) < 60000 && Date.parse(c.first_response_at) >= Date.parse(c.first_customer_message_at)).slice(0, 4);
-        const slow = ok.filter((c) => Date.parse(c.first_response_at) - Date.parse(c.first_customer_message_at) > 600000).slice(0, 2);
-        for (const c of fast.concat(slow)) {
-          const m = rows(await clint('/v2/messages/chat/' + c.id, { limit: 100 })).slice().reverse();
-          const t0 = Date.parse(c.first_customer_message_at);
-          const firstUser = m.find((x) => x.type === 'USER');
-          out.samples.push({
-            acc: a.type, kind: Date.parse(c.first_response_at) - t0 < 60000 ? 'fast' : 'slow',
-            n: m.length, userKeys: firstUser ? Object.keys(firstUser) : null,
-            msgs: m.slice(0, 5).map((x) => [x.type, x.content_type, x.source, x.user_id ? 'u' : '-', Math.round((Date.parse(x.created_at) - t0) / 1000), (x.content || '').length]),
-          });
-        }
-      }
-      return res.status(200).json(out);
     }
 
     if (action === 'metrics') {
@@ -141,37 +146,69 @@ module.exports = async (req, res) => {
         limit: 200, last_message_at_start: start + 'T00:00:00' + TZ,
       }, 40)));
       let chatsTotal = 0;
-      let respAll = [];
+      const cands = {}; /* conversas de leads do período, por dono da conversa */
       chatLists.forEach((list) => list.forEach((c) => {
         chatsTotal++;
         if (!c.user_id) return;
         const u = get(c.user_id);
         if (c.first_response_at) u.chats++;
-        /* Tempo de resposta: só conversas de leads do período; 1ª mensagem do cliente até a 1ª resposta humana */
         if (c.first_response_at && c.first_customer_message_at && leadContacts.has(c.contact_id)) {
           const t0 = Date.parse(c.first_customer_message_at);
-          const t1 = Date.parse(c.first_response_at);
-          if (t0 >= startMs && t0 <= endMs && t1 >= t0) {
-            const min = (t1 - t0) / 60000;
-            u.resp.push(min);
-            respAll.push(min);
-          }
+          if (t0 >= startMs && t0 <= endMs) (cands[c.user_id] = cands[c.user_id] || []).push(c);
         }
       }));
 
-      const list = Object.keys(users).map((id) => users[id]).filter((u) => u.leads || u.chats || u.resp.length).map((u) => ({
-        id: u.id, name: u.name, email: u.email,
-        leads: u.leads, leadsByOrigin: u.leadsByOrigin, leadsPerDay: round1(u.leads / days),
-        chats: u.chats, chatsPerDay: round1(u.chats / days),
-        respCount: u.resp.length,
-        avgResponseMin: round1(u.resp.length ? u.resp.reduce((s, x) => s + x, 0) / u.resp.length : null),
-        medianResponseMin: round1(median(u.resp)),
-      }));
+      /* Amostra por colaborador (espalhada no período): lê as mensagens para achar a 1ª resposta HUMANA */
+      const CAP = Math.min(60, parseInt(req.query.cap, 10) || 40);
+      const deadline = Date.now() + 42000;
+      const sample = [];
+      Object.keys(cands).forEach((uid) => {
+        const arr = cands[uid];
+        const step = Math.max(1, arr.length / CAP);
+        for (let k = 0; k < Math.min(CAP, arr.length); k++) sample.push({ uid, c: arr[Math.floor(k * step)] });
+      });
+      let truncated = false;
+      const found = await pool(sample, 8, async (it) => {
+        if (Date.now() > deadline) { truncated = true; return undefined; }
+        return firstHuman(it.c.id);
+      });
+      let respAll = [];
+      const stat = {}; /* por dono: amostra, com resposta humana */
+      sample.forEach((it, k) => {
+        const h = found[k];
+        if (h === undefined) return;
+        const st = stat[it.uid] = stat[it.uid] || { n: 0, human: 0 };
+        st.n++;
+        if (!h) return;
+        const t0 = Date.parse(it.c.first_customer_message_at);
+        const t1 = Date.parse(h.created_at);
+        if (!(t1 >= t0)) return;
+        st.human++;
+        const min = (t1 - t0) / 60000;
+        get(h.user_id || it.uid).resp.push(min);
+        respAll.push(min);
+      });
+
+      const list = Object.keys(users).map((id) => users[id]).filter((u) => u.leads || u.chats || u.resp.length).map((u) => {
+        const st = stat[u.id];
+        const hr = st && st.n ? st.human / st.n : null;
+        return {
+          id: u.id, name: u.name, email: u.email,
+          leads: u.leads, leadsByOrigin: u.leadsByOrigin, leadsPerDay: round1(u.leads / days),
+          chatsReplied: u.chats, humanRate: hr === null ? null : Math.round(hr * 100) / 100,
+          chatsHuman: hr === null ? null : Math.round(u.chats * hr),
+          chatsPerDay: hr === null ? null : round1((u.chats * hr) / days),
+          sampleSize: st ? st.n : 0,
+          respCount: u.resp.length,
+          avgResponseMin: round1(u.resp.length ? u.resp.reduce((s, x) => s + x, 0) / u.resp.length : null),
+          medianResponseMin: round1(median(u.resp)),
+        };
+      });
 
       res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=300');
       return res.status(200).json({
         generatedAt: new Date().toISOString(), start, end, days,
-        leadsTotal: leadContacts.size, dealsTotal: seenDeal.size, unassigned, chatsScanned: chatsTotal,
+        leadsTotal: leadContacts.size, dealsTotal: seenDeal.size, unassigned, chatsScanned: chatsTotal, truncated,
         responseAll: { count: respAll.length, avgMin: round1(respAll.length ? respAll.reduce((s, x) => s + x, 0) / respAll.length : null), medianMin: round1(median(respAll)) },
         users: list,
       });
