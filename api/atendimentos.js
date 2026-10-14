@@ -7,17 +7,19 @@
 const BASE = 'https://api.clint.digital';
 const TZ = '-03:00';
 
-async function clint(path, params, tries) {
+async function clint(path, params) {
+  const tries = 6;
   const token = process.env.CLINT_API_TOKEN;
   if (!token) throw new Error('CLINT_API_TOKEN não configurado na Vercel');
   const url = new URL(BASE + path);
   Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
   });
-  for (let a = 1; a <= (tries || 3); a++) {
+  for (let a = 1; a <= tries; a++) {
     const res = await fetch(url, { headers: { 'api-token': token, accept: 'application/json' } });
-    if ((res.status === 429 || res.status >= 500) && a < (tries || 3)) {
-      await new Promise((r) => setTimeout(r, 400 * a));
+    if ((res.status === 429 || res.status >= 500) && a < tries) {
+      const ra = parseFloat(res.headers.get('retry-after'));
+      await new Promise((r) => setTimeout(r, (ra > 0 && ra < 10 ? ra * 1000 : 700 * a) + Math.random() * 300));
       continue;
     }
     const text = await res.text();
@@ -100,7 +102,7 @@ module.exports = async (req, res) => {
     const deadline = Date.now() + 52000;
     const byUser = {}; /* uid -> { 'AAAA-MM-DD': conversas distintas } */
     let done = 0;
-    await pool(mine, 8, async (it) => {
+    await pool(mine, 6, async (it) => {
       if (Date.now() > deadline) { it.skipped = true; return; }
       const seen = new Set();
       for (let page = 1; page <= 30; page++) {
