@@ -514,6 +514,7 @@ function renderAgenda(){
 /* ═══ ABA TAXAS ═══ */
 let clintCache = {}, clintState = {key:'', status:'idle', data:null, error:''};
 const CLINT_TTL = 5*60*1000;
+let atendCache = {}, atendState = {key:'', status:'idle', byUser:null, days:1, pending:0, error:''};
 const isTaxas = () => document.body.dataset.view === 'taxas';
 const firstName = s => norm(String(s||'').trim().split(/\s+/)[0]);
 const monthIdx = () => PT_MONTHS.indexOf(selMonth);
@@ -561,6 +562,17 @@ function avatarMini(name){
     ? `<img class="mini" src="${photo}" alt="${esc(name)}" onerror="this.style.display='none'"/>`
     : `<span class="mini fb">${ini}</span>`;
 }
+function atendFor(c){
+  if(!c || !atendState.byUser) return null;
+  const v = Object.values(atendState.byUser[c.id] || {});
+  const total = v.reduce((x,y)=>x+y,0);
+  return {total, avg: total/atendState.days, peak: v.length?Math.round(Math.max(...v)):0, active: v.length};
+}
+function atCell(a){
+  if(!a) return atendState.status==='loading' ? '…' : '—';
+  const pre = atendState.partial ? '~' : '';
+  return `<span title="Pico de ${a.peak} conversas em um dia, ${a.active} dias com atendimento">${pre}${fmtDec(a.avg)}</span> <span style="opacity:.55;font-size:.8em">(${pre}${Math.round(a.total)})</span>`;
+}
 function buildTaxas(){
   const clintOk = clintState.status==='ok';
   // SDRs e Social Sellers
@@ -573,16 +585,22 @@ function buildTaxas(){
     return {name:n, role:ROLES[n]||(CFG.SOCIAL_SELLERS.includes(n)?'Social Seller':'SDR'),
       leads, ag, vendas:v.count, valor:v.value,
       cLA: leads===null?null:pct(ag,leads), cLV: leads===null?null:pct(v.count,leads), cAV: pct(v.count,ag),
-      lpd: c?c.leadsPerDay:null, cpd: c?c.chatsPerDay:null, resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respN: c?c.respCount:0};
+      lpd: c?c.leadsPerDay:null, at: atendFor(c), resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respN: c?c.respCount:0};
   }).sort((a,b)=>b.valor-a.valor||b.ag-a.ag||a.name.localeCompare(b.name));
   // Closers
   const cNames = [...new Set([...CFG.CLOSERS, ...meetings.filter(m=>inMonthStr(m.date)&&m.closer).map(m=>norm(m.closer))])];
   const closers = cNames.map(n=>{
     const v = salesFor(n,[CFG.C_CLOSER]), c = clintFor(n), real = realizadasBy(n);
     return {name:n, neg: clintOk&&c?c.leads:null, real, vendas:v.count, valor:v.value, cRV: pct(v.count,real),
-      lpd: c?c.leadsPerDay:null, cpd: c?c.chatsPerDay:null};
+      lpd: c?c.leadsPerDay:null, at: atendFor(c)};
   }).sort((a,b)=>b.valor-a.valor||b.real-a.real||a.name.localeCompare(b.name));
   return {sdr, closers};
+}
+function atTot(rows){
+  if(!atendState.byUser) return atendState.status==='loading' ? '…' : '—';
+  const pre = atendState.partial ? '~' : '';
+  const t = rows.reduce((x,r)=>x+(r.at?r.at.total:0),0);
+  return `${pre}${fmtDec(t/atendState.days)} <span style="opacity:.55;font-size:.8em">(${pre}${Math.round(t)})</span>`;
 }
 function sumK(a,k){ return a.reduce((t,x)=>t+(x[k]||0),0); }
 function renderTaxas(){
@@ -596,29 +614,101 @@ function renderTaxas(){
   const shown = new Set(sdr.map(r=>r.name));
   const distinct = saleRows().filter(r=>shown.has(norm(r[CFG.C_SDR])) || shown.has(norm(r[CFG.C_SOCIAL])));
   const tl = sumK(sdr,'leads'), ta = sumK(sdr,'ag'), tv = distinct.length, tval = distinct.reduce((t,r)=>t+parseBRL(r[CFG.C_VALUE]),0);
-  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Vendas','Leads → Agend.','Leads → Vendas','Agend. → Vendas','Valor recebido','Leads/dia','Conversas/dia (est.)','Tempo de resposta (mediana · média)')}</thead><tbody>`
-    + sdr.map(r=>`<tr>${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.vendas)}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(fmtDec(r.cpd),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
-    + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell('')}${cell('')}${cell('')}</tr></tbody></table>`
+  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Vendas','Leads → Agend.','Leads → Vendas','Agend. → Vendas','Valor recebido','Leads/dia','Atendimentos/dia','Tempo de resposta (mediana · média)')}</thead><tbody>`
+    + sdr.map(r=>`<tr>${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.vendas)}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell('')}${cell(atTot(sdr))}${cell('')}</tr></tbody></table>`
     : '<div class="msg">Sem dados para este período.</div>';
 
   const tn = sumK(closers,'neg'), tr = sumK(closers,'real'), tcv = sumK(closers,'vendas'), tcval = sumK(closers,'valor');
-  $('tx-closer').innerHTML = closers.length ? `<table class="tx"><thead>${th('Closer','Negócios (Clint)','Reuniões realizadas','Vendas','Realizadas → Vendas','Valor recebido','Negócios/dia','Conversas/dia (est.)')}</thead><tbody>`
-    + closers.map(r=>`<tr>${who({name:r.name})}${cell(fmtNum(r.neg),r.neg===null?'dim':'')}${cell(r.real)}${cell(r.vendas)}${cell(fmtPct(r.cRV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(fmtDec(r.cpd),'dim')}</tr>`).join('')
-    + `<tr class="tot"><td>Total</td>${cell(clintOk?tn:'—')}${cell(tr)}${cell(tcv)}${cell(fmtPct(pct(tcv,tr)))}${cell(fmtBRL(tcval))}${cell('')}${cell('')}</tr></tbody></table>`
+  $('tx-closer').innerHTML = closers.length ? `<table class="tx"><thead>${th('Closer','Negócios (Clint)','Reuniões realizadas','Vendas','Realizadas → Vendas','Valor recebido','Negócios/dia','Atendimentos/dia')}</thead><tbody>`
+    + closers.map(r=>`<tr>${who({name:r.name})}${cell(fmtNum(r.neg),r.neg===null?'dim':'')}${cell(r.real)}${cell(r.vendas)}${cell(fmtPct(r.cRV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tn:'—')}${cell(tr)}${cell(tcv)}${cell(fmtPct(pct(tcv,tr)))}${cell(fmtBRL(tcval))}${cell('')}${cell(atTot(closers))}</tr></tbody></table>`
     : '<div class="msg">Sem dados para este período.</div>';
 
   $('tx-s-sdr').innerHTML = `${selMonth} ${selYear}`;
   $('tx-s-closer').innerHTML = `${selMonth} ${selYear}`;
   const cn = clintState.status==='loading' ? 'Consultando o Clint…'
     : clintState.status==='error' ? `<span class="err">⚠️ Clint: ${esc(clintState.error)}</span>` : '';
+  const atNote = atendState.status==='error' ? ' ⚠️ Atendimentos: '+esc(atendState.error)
+    : atendState.status==='loading' ? ' Calculando os atendimentos por dia, lendo as conversas ('+(atendState.progress||'0%')+'). Os valores com ~ são estimativas e ficam exatos ao terminar.'
+    : atendState.partial ? ' ⚠️ Algumas partes da leitura falharam; os atendimentos são uma estimativa (~).'
+    : atendState.pending ? ' ⚠️ '+atendState.pending+' conversas não foram lidas a tempo; os atendimentos podem estar um pouco abaixo do real.' : '';
   const trunc = clintState.data && clintState.data.truncated ? ' ⚠️ O tempo de resposta foi calculado com parte da amostra (limite de tempo da consulta).' : '';
-  $('tx-n-sdr').innerHTML = cn || 'Leads: negócios criados no mês nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Conversas/dia: estimativa (conversas respondidas × % com resposta humana na amostra).'+trunc+' Agendadas: reuniões marcadas no mês (dia do agendamento). Vendas e valor: planilha, mês da venda. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
+  $('tx-n-sdr').innerHTML = cn || 'Leads: negócios criados no mês nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia). Vem da leitura das mensagens de todas as conversas, sem respostas automáticas.'+trunc+atNote+' Agendadas: reuniões marcadas no mês (dia do agendamento). Vendas e valor: planilha, mês da venda. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
   $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no mês (dia da reunião). Vendas e valor: planilha, mês da venda.';
   const g = clintState.data && clintState.data.generatedAt ? ' Dados do Clint de '+new Date(clintState.data.generatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'.' : '';
   $('tx-foot').textContent = 'As taxas cruzam períodos iguais (o mês selecionado), mas uma venda pode vir de um lead de mês anterior.'+g;
 }
+async function loadAtend(force){
+  const r = monthRange(); if(!r) return;
+  const key = r.start;
+  const c = atendCache[key];
+  if(!force && c && Date.now()-c.t < CLINT_TTL){ atendState = Object.assign({key, status:'ok', error:''}, c.data); renderTaxas(); return; }
+  if(atendState.key===key && atendState.status==='loading') return;
+  atendState = {key, status:'loading', byUser:null, days:1, pending:0, error:'', progress:'0%', partial:false};
+  renderTaxas();
+  const today = new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
+  const yest = new Date(Date.now()-27*3600*1000).toISOString().slice(0,10);
+  const lastDay = r.end < today ? r.end : today;
+  const days = Math.max(1, Math.round((Date.parse(lastDay+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000)+1);
+  const pastEnd = r.end < today ? r.end : yest;
+  const groups = [];
+  if(r.end >= today && r.start <= today) groups.push({s:today, e:today, n:4, done:0, by:{}, pend:0});
+  if(r.start <= pastEnd) groups.push({s:r.start, e:pastEnd, n:48, done:0, by:{}, pend:0});
+  const tasks = [];
+  groups.forEach(g=>{ for(let i=0;i<g.n;i++) tasks.push({g,i}); });
+  const total = tasks.length; let next = 0, finished = 0, lastErr = null;
+  const snapshot = ()=>{
+    const by = {}; let pend = 0;
+    groups.forEach(g=>{
+      pend += g.pend;
+      const f = g.done ? g.n/g.done : 0;
+      Object.keys(g.by).forEach(u=>{ const d = by[u] = by[u]||{}; Object.keys(g.by[u]).forEach(k=>{ d[k] = (d[k]||0) + g.by[u][k]*f; }); });
+    });
+    return {byUser:by, days, pending:pend};
+  };
+  const getShard = async (g,i)=>{
+    for(let t=0; t<2; t++){
+      try{
+        const res = await fetch(`/api/atendimentos?start=${g.s}&end=${g.e}&shard=${i}&of=${g.n}${t?'&r='+t:''}`, {cache:'no-store'});
+        const b = await res.json().catch(()=>({}));
+        if(!res.ok) throw new Error(b.error || ('HTTP '+res.status));
+        return b;
+      }catch(e){
+        if(t===1) throw e;
+        await new Promise(ok=>setTimeout(ok, 2000));
+      }
+    }
+  };
+  await Promise.all(Array.from({length:3}, async ()=>{
+    while(next < total){
+      const {g,i} = tasks[next++];
+      try{
+        const b = await getShard(g,i);
+        g.done++; g.pend += b.pending||0;
+        Object.keys(b.byUser||{}).forEach(u=>{ const d = g.by[u] = g.by[u]||{}; Object.keys(b.byUser[u]).forEach(k=>{ d[k] = (d[k]||0) + b.byUser[u][k]; }); });
+      }catch(e){ lastErr = e; }
+      finished++;
+      if(atendState.key===key && finished<total){
+        atendState = Object.assign({key, status:'loading', error:'', progress:Math.round(finished*100/total)+'%', partial:true}, snapshot());
+        renderTaxas();
+      }
+    }
+  }));
+  if(atendState.key!==key) return;
+  if(!groups.some(g=>g.done)){
+    atendState = {key, status:'error', byUser:null, days:1, pending:0, error:(lastErr&&lastErr.message)||'falha', progress:'', partial:false};
+  }else{
+    const complete = groups.every(g=>g.done===g.n);
+    const snap = snapshot();
+    atendState = Object.assign({key, status:'ok', error:'', progress:'', partial:!complete}, snap);
+    if(complete) atendCache[key] = {t:Date.now(), data:{byUser:snap.byUser, days:snap.days, pending:snap.pending, progress:'', partial:false}};
+  }
+  renderTaxas();
+}
 async function loadClint(force){
   const r = monthRange(); if(!r) return;
+  loadAtend(force);
   const key = r.start;
   const c = clintCache[key];
   if(!force && c && Date.now()-c.t < CLINT_TTL){ clintState = {key, status:'ok', data:c.data, error:''}; renderTaxas(); return; }
