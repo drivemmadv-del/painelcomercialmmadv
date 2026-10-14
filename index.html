@@ -630,9 +630,9 @@ function renderTaxas(){
   const cn = clintState.status==='loading' ? 'Consultando o Clint…'
     : clintState.status==='error' ? `<span class="err">⚠️ Clint: ${esc(clintState.error)}</span>` : '';
   const atNote = atendState.status==='error' ? ' ⚠️ Atendimentos: '+esc(atendState.error)
-    : atendState.status==='loading' ? ' Calculando os atendimentos por dia, lendo as conversas ('+(atendState.progress||'0%')+'). Os valores com ~ são estimativas e ficam exatos ao terminar.'
-    : atendState.partial ? ' ⚠️ Algumas partes da leitura falharam; os atendimentos são uma estimativa (~).'
-    : atendState.pending ? ' ⚠️ '+atendState.pending+' conversas não foram lidas a tempo; os atendimentos podem estar um pouco abaixo do real.' : '';
+    : atendState.status==='loading' ? ' Calculando os atendimentos por dia, lendo as conversas ('+(atendState.progress||'0%')+'). Os valores com ~ são estimativas e se ajustam conforme a leitura avança.'
+    : atendState.failed ? ' ⚠️ Algumas partes da leitura falharam; os atendimentos são uma estimativa (~).'
+    : atendState.partial ? ' Atendimentos estimados por amostragem (~): foram lidas '+Math.round((atendState.sample||0)*100)+'% das conversas, escolhidas ao acaso (limite de requisições do Clint).' : '';
   const trunc = clintState.data && clintState.data.truncated ? ' ⚠️ O tempo de resposta foi calculado com parte da amostra (limite de tempo da consulta).' : '';
   $('tx-n-sdr').innerHTML = cn || 'Leads: negócios criados no mês nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia). Vem da leitura das mensagens de todas as conversas, sem respostas automáticas.'+trunc+atNote+' Agendadas: reuniões marcadas no mês (dia do agendamento). Vendas e valor: planilha, mês da venda. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
   $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no mês (dia da reunião). Vendas e valor: planilha, mês da venda.';
@@ -645,7 +645,7 @@ async function loadAtend(force){
   const c = atendCache[key];
   if(!force && c && Date.now()-c.t < CLINT_TTL){ atendState = Object.assign({key, status:'ok', error:''}, c.data); renderTaxas(); return; }
   if(atendState.key===key && atendState.status==='loading') return;
-  atendState = {key, status:'loading', byUser:null, days:1, pending:0, error:'', progress:'0%', partial:false};
+  atendState = {key, status:'loading', byUser:null, days:1, sample:0, error:'', progress:'0%', partial:false, failed:false};
   renderTaxas();
   const today = new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
   const yest = new Date(Date.now()-27*3600*1000).toISOString().slice(0,10);
@@ -653,19 +653,23 @@ async function loadAtend(force){
   const days = Math.max(1, Math.round((Date.parse(lastDay+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000)+1);
   const pastEnd = r.end < today ? r.end : yest;
   const groups = [];
-  if(r.end >= today && r.start <= today) groups.push({s:today, e:today, n:4, done:0, by:{}, pend:0});
-  if(r.start <= pastEnd) groups.push({s:r.start, e:pastEnd, n:48, done:0, by:{}, pend:0});
+  if(r.end >= today && r.start <= today) groups.push({s:today, e:today, n:2, done:0, res:[]});
+  if(r.start <= pastEnd) groups.push({s:r.start, e:pastEnd, n:8, done:0, res:[]});
   const tasks = [];
   groups.forEach(g=>{ for(let i=0;i<g.n;i++) tasks.push({g,i}); });
   const total = tasks.length; let next = 0, finished = 0, lastErr = null;
   const snapshot = ()=>{
-    const by = {}; let pend = 0;
+    const by = {}; let seen = 0, all = 0;
     groups.forEach(g=>{
-      pend += g.pend;
       const f = g.done ? g.n/g.done : 0;
-      Object.keys(g.by).forEach(u=>{ const d = by[u] = by[u]||{}; Object.keys(g.by[u]).forEach(k=>{ d[k] = (d[k]||0) + g.by[u][k]*f; }); });
+      g.res.forEach(b=>{
+        const ins = b.chatsInShard||0, pr = b.processed||0;
+        seen += pr; all += ins;
+        const k = pr>0 ? ins/pr : 0;
+        Object.keys(b.byUser||{}).forEach(u=>{ const d = by[u] = by[u]||{}; Object.keys(b.byUser[u]).forEach(dk=>{ d[dk] = (d[dk]||0) + b.byUser[u][dk]*k*f; }); });
+      });
     });
-    return {byUser:by, days, pending:pend};
+    return {byUser:by, days, sample: all ? seen/all : 1};
   };
   const getShard = async (g,i)=>{
     for(let t=0; t<2; t++){
@@ -680,13 +684,12 @@ async function loadAtend(force){
       }
     }
   };
-  await Promise.all(Array.from({length:3}, async ()=>{
+  await Promise.all(Array.from({length:2}, async ()=>{
     while(next < total){
       const {g,i} = tasks[next++];
       try{
         const b = await getShard(g,i);
-        g.done++; g.pend += b.pending||0;
-        Object.keys(b.byUser||{}).forEach(u=>{ const d = g.by[u] = g.by[u]||{}; Object.keys(b.byUser[u]).forEach(k=>{ d[k] = (d[k]||0) + b.byUser[u][k]; }); });
+        g.done++; g.res.push(b);
       }catch(e){ lastErr = e; }
       finished++;
       if(atendState.key===key && finished<total){
@@ -697,12 +700,13 @@ async function loadAtend(force){
   }));
   if(atendState.key!==key) return;
   if(!groups.some(g=>g.done)){
-    atendState = {key, status:'error', byUser:null, days:1, pending:0, error:(lastErr&&lastErr.message)||'falha', progress:'', partial:false};
+    atendState = {key, status:'error', byUser:null, days:1, sample:0, error:(lastErr&&lastErr.message)||'falha', progress:'', partial:false};
   }else{
     const complete = groups.every(g=>g.done===g.n);
     const snap = snapshot();
-    atendState = Object.assign({key, status:'ok', error:'', progress:'', partial:!complete}, snap);
-    if(complete) atendCache[key] = {t:Date.now(), data:{byUser:snap.byUser, days:snap.days, pending:snap.pending, progress:'', partial:false}};
+    const exact = complete && snap.sample >= 0.999;
+    atendState = Object.assign({key, status:'ok', error:'', progress:'', partial:!exact, failed:!complete}, snap);
+    if(complete) atendCache[key] = {t:Date.now(), data:{byUser:snap.byUser, days:snap.days, sample:snap.sample, progress:'', partial:!exact, failed:false}};
   }
   renderTaxas();
 }
