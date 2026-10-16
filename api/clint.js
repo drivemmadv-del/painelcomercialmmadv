@@ -2,7 +2,7 @@
    O token fica só na variável de ambiente CLINT_API_TOKEN e nunca vai para o navegador.
    action=metrics&start=AAAA-MM-DD&end=AAAA-MM-DD devolve, por colaborador:
    leads (origens VENDAS SDR, SOCIAL SELLER e CLOSER), leads/dia, conversas atendidas/dia
-   e tempo de resposta (média e mediana). */
+   e tempo de resposta (média e mediana) em horário comercial: só conta segunda a sexta, das 08h às 18h (Brasília). */
 
 const BASE = 'https://api.clint.digital';
 const ORIGINS = ['VENDAS SDR', 'VENDAS SOCIAL SELLER', 'VENDAS CLOSER'];
@@ -52,6 +52,21 @@ function median(a) {
   const s = a.slice().sort((x, y) => x - y);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+/* Minutos úteis entre dois instantes (ms): só segunda a sexta, das BIZ_START às BIZ_END, horário de Brasília (UTC-3, sem horário de verão).
+   Sábado, domingo e o intervalo das 18h às 08h não contam. */
+const BIZ_START = 8, BIZ_END = 18, OFF = 3 * 3600000, DAY = 86400000;
+function businessMinutes(t0, t1) {
+  if (!(t1 > t0)) return 0;
+  let total = 0;
+  for (let d = Math.floor((t0 - OFF) / DAY) * DAY + OFF; d < t1; d += DAY) {
+    const dow = new Date(d - OFF).getUTCDay(); /* 0 = domingo, 6 = sábado (dia local) */
+    if (dow === 0 || dow === 6) continue;
+    const a = Math.max(t0, d + BIZ_START * 3600000);
+    const b = Math.min(t1, d + BIZ_END * 3600000);
+    if (b > a) total += b - a;
+  }
+  return total / 60000;
 }
 const round1 = (n) => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
 
@@ -111,10 +126,10 @@ module.exports = async (req, res) => {
       ]);
       const users = {};
       rows(usersBody).forEach((u) => {
-        users[u.id] = { id: u.id, name: u.full_name || u.name || u.email || u.id, email: u.email || null, leads: 0, leadsByOrigin: {}, chats: 0, resp: [] };
+        users[u.id] = { id: u.id, name: u.full_name || u.name || u.email || u.id, email: u.email || null, leads: 0, leadsByOrigin: {}, chats: 0, resp: [], respRaw: [] };
       });
       const origins = rows(originsBody).filter((o) => ORIGINS.indexOf((o.name || '').trim()) >= 0);
-      const get = (id, fallback) => users[id] || (users[id] = { id, name: fallback || id, email: null, leads: 0, leadsByOrigin: {}, chats: 0, resp: [] });
+      const get = (id, fallback) => users[id] || (users[id] = { id, name: fallback || id, email: null, leads: 0, leadsByOrigin: {}, chats: 0, resp: [], respRaw: [] });
 
       /* Leads: negócios criados no período nas 3 origens (qualquer status) */
       const jobs = [];
@@ -172,7 +187,7 @@ module.exports = async (req, res) => {
         if (Date.now() > deadline) { truncated = true; return undefined; }
         return firstHuman(it.c.id);
       });
-      let respAll = [];
+      let respAll = [], respAllRaw = [];
       const stat = {}; /* por dono: amostra, com resposta humana */
       sample.forEach((it, k) => {
         const h = found[k];
@@ -184,9 +199,11 @@ module.exports = async (req, res) => {
         const t1 = Date.parse(h.created_at);
         if (!(t1 >= t0)) return;
         st.human++;
-        const min = (t1 - t0) / 60000;
-        get(h.user_id || it.uid).resp.push(min);
-        respAll.push(min);
+        const raw = (t1 - t0) / 60000;
+        const min = businessMinutes(t0, t1);
+        const who = get(h.user_id || it.uid);
+        who.resp.push(min); who.respRaw.push(raw);
+        respAll.push(min); respAllRaw.push(raw);
       });
 
       const list = Object.keys(users).map((id) => users[id]).filter((u) => u.leads || u.chats || u.resp.length).map((u) => {
@@ -202,6 +219,8 @@ module.exports = async (req, res) => {
           respCount: u.resp.length,
           avgResponseMin: round1(u.resp.length ? u.resp.reduce((s, x) => s + x, 0) / u.resp.length : null),
           medianResponseMin: round1(median(u.resp)),
+          avgResponseRawMin: round1(u.respRaw.length ? u.respRaw.reduce((s, x) => s + x, 0) / u.respRaw.length : null),
+          medianResponseRawMin: round1(median(u.respRaw)),
         };
       });
 
@@ -209,7 +228,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         generatedAt: new Date().toISOString(), start, end, days,
         leadsTotal: leadContacts.size, dealsTotal: seenDeal.size, unassigned, chatsScanned: chatsTotal, truncated,
-        responseAll: { count: respAll.length, avgMin: round1(respAll.length ? respAll.reduce((s, x) => s + x, 0) / respAll.length : null), medianMin: round1(median(respAll)) },
+        responseAll: { count: respAll.length, avgMin: round1(respAll.length ? respAll.reduce((s, x) => s + x, 0) / respAll.length : null), medianMin: round1(median(respAll)), avgRawMin: round1(respAllRaw.length ? respAllRaw.reduce((s, x) => s + x, 0) / respAllRaw.length : null), medianRawMin: round1(median(respAllRaw)), businessHours: 'seg-sex 08h-18h (Brasília)' },
         users: list,
       });
     }
@@ -221,3 +240,4 @@ module.exports = async (req, res) => {
     return res.status(e.status && e.status >= 400 && e.status < 600 ? 502 : 500).json({ error: e.message });
   }
 };
+module.exports.businessMinutes = businessMinutes;
