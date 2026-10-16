@@ -767,7 +767,7 @@ function buildTaxas(){
     return {name:n, role:ROLES[n]||(CFG.SOCIAL_SELLERS.includes(n)?'Social Seller':'SDR'),
       leads, ag, vendas:ss.ct.n, valor:ss.grand.v, rows:v.rows, ss, st:schedStats(n),
       cLA: leads===null?null:pct(ag,leads), cLV: leads===null?null:pct(ss.ct.n,leads), cAV: pct(ss.ct.n,ag),
-      lpd: c?c.leadsPerDay:null, at: atendFor(c), resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respN: c?c.respCount:0};
+      lpd: c?c.leadsPerDay:null, at: atendFor(c), resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respRawMed: c?c.medianResponseRawMin:null, respN: c?c.respCount:0};
   }).sort((a,b)=>b.valor-a.valor||b.ag-a.ag||a.name.localeCompare(b.name));
   // Closers
   const cNames = [...new Set([...CFG.CLOSERS, ...meetings.filter(m=>inMonthStr(m.date)&&m.closer).map(m=>norm(m.closer))])];
@@ -844,7 +844,7 @@ function renderPessoa(r, kind, ctx){
   const atV = a ? `${pre}${fmtDec(a.avg)}` : (atendState.status==='loading' ? '…' : '—');
   const atS = a ? `${pre}${Math.round(a.total)} conversas-dia · pico de ${a.peak} em um dia · ${a.active} dias com atendimento` : 'conversas diferentes respondidas por dia';
   const respV = r.respN ? fmtMin(r.respMed) : '—';
-  const respS = r.respN ? `média ${fmtMin(r.resp)} · amostra de ${r.respN} conversas` : 'sem amostra de respostas';
+  const respS = r.respN ? `média ${fmtMin(r.resp)} · mediana em 24h corridas ${fmtMin(r.respRawMed)} · amostra de ${r.respN} conversas` : 'sem amostra de respostas';
   const tkS = `com consultas e recorrentes: ${fmtBRLn(ss.tot.tk)} (${nv(ss.tot.n)})`;
   const ctS = ss.ct.n ? 'clientes diferentes com contrato novo' : 'nenhum contrato novo no período';
   const tipos = [
@@ -867,7 +867,7 @@ function renderPessoa(r, kind, ctx){
       kpi('Ticket médio (contratos)', fmtBRLn(ss.ct.tk), tkS, true),
     ].concat(tipos, [
       kpi('Atendimentos/dia', atV, atS, false),
-      kpi('Tempo de resposta (mediana)', respV, respS, false),
+      kpi('Tempo de resposta (mediana, horário comercial)', respV, respS, false),
     ]);
   }else{
     cards = [
@@ -998,7 +998,7 @@ function renderTaxas(){
   $('tx-comp').innerHTML = compTable(sAll);
 
   const tr1 = (r,kind)=>`<tr data-tab="${esc(txKeyOf(kind,r.name))}" title="Ver os KPIs de ${esc(r.name)}">`;
-  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Contratos','Consultas · Recorrentes','Leads → Agend.','Leads → Contratos','Agend. → Contratos','Valor recebido','Valor em contratos','Ticket (contratos)','Ticket (com consultas e recorrentes)','Leads/dia','Atendimentos/dia','Tempo de resposta (mediana · média)')}</thead><tbody>`
+  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Contratos','Consultas · Recorrentes','Leads → Agend.','Leads → Contratos','Agend. → Contratos','Valor recebido','Valor em contratos','Ticket (contratos)','Ticket (com consultas e recorrentes)','Leads/dia','Atendimentos/dia','Tempo de resposta útil (mediana · média)')}</thead><tbody>`
     + sdr.map(r=>`${tr1(r,'sdr')}${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.ss.ct.n)}${cell(r.ss.cq.n+' · '+r.ss.rc.n,'dim')}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtBRL(r.ss.ct.v),'val')}${cell(fmtBRLn(r.ss.ct.tk),'val')}${cell(fmtBRLn(r.ss.tot.tk),'dim')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
     + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(sTeam.cq.n+' · '+sTeam.rc.n)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell(fmtBRL(sTeam.ct.v))}${cell(fmtBRLn(sTeam.ct.tk))}${cell(fmtBRLn(sTeam.tot.tk))}${cell('')}${cell(atTot(sdr))}${cell('')}</tr></tbody></table>`
     : '<div class="msg">Sem dados para este período.</div>';
@@ -1011,7 +1011,7 @@ function renderTaxas(){
   $('tx-s-sdr').innerHTML = esc(periodLabel());
   $('tx-s-closer').innerHTML = esc(periodLabel());
   const trunc = clintState.data && clintState.data.truncated ? ' ⚠️ O tempo de resposta foi calculado com parte da amostra (limite de tempo da consulta).' : '';
-  $('tx-n-sdr').innerHTML = cn || 'Clique em um colaborador para ver os KPIs dele. Leads: negócios criados no período nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia).'+trunc+atNote+' Agendadas: reuniões marcadas no período (dia do agendamento). Contratos: clientes diferentes com contrato novo (sem consultas, recorrentes e LTV). Valor recebido: todos os tipos. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
+  $('tx-n-sdr').innerHTML = cn || 'Clique em um colaborador para ver os KPIs dele. Leads: negócios criados no período nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, contando só segunda a sexta, das 08h às 18h (Brasília); sábados, domingos e o intervalo das 18h às 08h ficam de fora. Não inclui respostas automáticas e usa amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia).'+trunc+atNote+' Agendadas: reuniões marcadas no período (dia do agendamento). Contratos: clientes diferentes com contrato novo (sem consultas, recorrentes e LTV). Valor recebido: todos os tipos. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
   $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no período (dia da reunião). Contratos, valores e tickets seguem as mesmas regras da tabela acima. A coluna Closer da planilha costuma ficar vazia nas consultas.';
 }
 async function loadAtend(force){
