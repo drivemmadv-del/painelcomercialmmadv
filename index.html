@@ -181,6 +181,18 @@ table.tx tbody tr[data-tab]{cursor:pointer;}
 table.tx tbody tr[data-tab]:hover td{border-color:var(--bord2);}
 table.tx td.l{text-align:left;}
 .tx-sub{font-family:'Montserrat',sans-serif;font-size:1.3vh;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);margin:1.4vh 0 .9vh;}
+.chip.q{background:rgba(75,106,150,.3);color:#a9c1e6;}
+.chip.rc{background:rgba(110,160,120,.22);color:#b5d9b5;}
+.chip.ltv{background:rgba(236,125,160,.18);color:#f0a3bd;}
+table.tx td small{font-weight:500;color:var(--muted);font-size:.8em;margin-left:.3em;}
+.tx-period{display:flex;flex-wrap:wrap;align-items:center;gap:.8vh 1vw;margin:0 0 1.4vh;}
+.tx-pre{display:flex;flex-wrap:wrap;gap:.6vh .4vw;}
+.tx-pb{background:var(--surf2);border:1px solid var(--bord2);color:var(--muted);padding:.6vh .8vw;border-radius:1vh;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:1.4vh;font-weight:800;white-space:nowrap;}
+.tx-pb:hover{color:var(--text);}
+.tx-pb.on{background:linear-gradient(135deg,var(--goldd),var(--gold));color:#040d19;border-color:transparent;}
+.tx-dates{display:flex;gap:.8vw;align-items:center;margin-left:auto;}
+.tx-dates label{display:flex;align-items:center;gap:.4vw;font-family:'Montserrat',sans-serif;font-size:1.25vh;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.tx-dates input{background:var(--surf2);border:1px solid var(--bord2);color:var(--text);border-radius:.8vh;padding:.6vh .6vw;font-family:'Montserrat',sans-serif;font-size:1.5vh;color-scheme:dark;}
 @media (max-aspect-ratio:1/1){ .views{margin-left:0;} table.tx{font-size:1.5vh;} .fn-r{grid-template-columns:12vh 1fr 16vh;} }
 </style>
 </head>
@@ -231,14 +243,30 @@ table.tx td.l{text-align:left;}
 </main>
 
 <section class="taxas" id="taxas" aria-label="Taxas por colaborador">
+  <div class="tx-period" id="tx-period">
+    <div class="tx-pre" id="tx-pre">
+      <button type="button" class="tx-pb" data-p="hoje">Hoje</button>
+      <button type="button" class="tx-pb" data-p="semana">Esta semana</button>
+      <button type="button" class="tx-pb" data-p="7d">Últimos 7 dias</button>
+      <button type="button" class="tx-pb" data-p="mes">Este mês</button>
+      <button type="button" class="tx-pb" data-p="mes-ant">Mês passado</button>
+      <button type="button" class="tx-pb" data-p="30d">Últimos 30 dias</button>
+    </div>
+    <div class="tx-dates">
+      <label>De <input type="date" id="tx-from"></label>
+      <label>Até <input type="date" id="tx-to"></label>
+    </div>
+  </div>
   <div class="tx-tabs" id="tx-tabs" role="tablist" aria-label="Visão e colaboradores"></div>
   <div id="tx-geral">
     <div class="tx-box">
       <div class="box-hd"><div class="box-t">📈 Visão geral do comercial</div><div class="box-s" id="tx-s-geral"></div></div>
       <div class="tx-note" id="tx-n-geral"></div>
       <div class="kpis" id="tx-kpi-geral"></div>
-      <div class="tx-sub">Funil do mês</div>
+      <div class="tx-sub">Funil do período</div>
       <div class="fn" id="tx-funil"></div>
+      <div class="tx-sub">Composição das vendas</div>
+      <div class="tx-wrap" id="tx-comp"></div>
     </div>
     <div class="tx-box">
       <div class="box-hd"><div class="box-t">📞 SDRs e Social Sellers</div><div class="box-s" id="tx-s-sdr"></div></div>
@@ -367,6 +395,7 @@ async function fetchSheet(){
       CFG.C_SDR   = find(/^SDR/i, CFG.C_SDR);
       CFG.C_VALUE = find(/^VALOR RECEBIDO/i, CFG.C_VALUE);
       CFG.C_SOCIAL= find(/^Social/i, CFG.C_SOCIAL);
+      annotateSales(r.data);
       ok(r.data);
     }, error:fail,
   }));
@@ -411,7 +440,7 @@ function buildFilters(sorted){
   $('selMonth').innerHTML = months.map(m=>`<option value="${m}"${m===selMonth?' selected':''}>${m}</option>`).join('');
 }
 function onFilter(fromYear){
-  userPicked = true;
+  userPicked = true; txFrom = txTo = '';
   const y = $('selYear').value;
   if(fromYear){
     // troca de ano: escolhe o último mês disponível daquele ano (ou o mesmo mês, se existir)
@@ -566,7 +595,49 @@ const isTaxas = () => document.body.dataset.view === 'taxas';
 const firstName = s => norm(String(s||'').trim().split(/\s+/)[0]);
 const monthIdx = () => PT_MONTHS.indexOf(selMonth);
 const pad2 = n => String(n).padStart(2,'0');
-function monthRange(){
+let txFrom = '', txTo = '';   // vazio = segue o mês do filtro do cabeçalho
+function monthRange(){ return (txFrom && txTo) ? {start:txFrom, end:txTo} : calMonth(); }
+const fmtDMY = d => d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4);
+function periodLabel(){
+  const r = monthRange(); if(!r) return '';
+  const [y,m] = r.start.split('-').map(Number), last = new Date(y, m, 0).getDate();
+  if(r.start.slice(8)==='01' && r.end===`${y}-${pad2(m)}-${pad2(last)}`) return `${PT_MONTHS[m-1]} ${y}`;
+  return r.start===r.end ? fmtDMY(r.start) : `${fmtDMY(r.start)} a ${fmtDMY(r.end)}`;
+}
+const pKey = r => r.start+'_'+r.end;
+const todayBR = () => new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
+const addDays = (d,k) => new Date(Date.parse(d+'T00:00:00Z')+k*86400000).toISOString().slice(0,10);
+function presetRange(p){
+  const t = todayBR(), y = +t.slice(0,4), m = +t.slice(5,7);
+  const first = (yy,mm)=>`${yy}-${pad2(mm)}-01`;
+  const lastD = (yy,mm)=>`${yy}-${pad2(mm)}-${pad2(new Date(Date.UTC(yy,mm,0)).getUTCDate())}`;
+  if(p==='hoje') return [t,t];
+  if(p==='semana') return [addDays(t, -((new Date(t+'T12:00:00Z').getUTCDay()+6)%7)), t];
+  if(p==='7d') return [addDays(t,-6), t];
+  if(p==='30d') return [addDays(t,-29), t];
+  if(p==='mes') return [first(y,m), lastD(y,m)];
+  if(p==='mes-ant'){ const mm = m===1?12:m-1, yy = m===1?y-1:y; return [first(yy,mm), lastD(yy,mm)]; }
+  return null;
+}
+function renderPeriodBar(){
+  const r = monthRange(); if(!r) return;
+  const f = $('tx-from'), t = $('tx-to');
+  if(document.activeElement!==f && f.value!==r.start) f.value = r.start;
+  if(document.activeElement!==t && t.value!==r.end) t.value = r.end;
+  document.querySelectorAll('#tx-pre [data-p]').forEach(b=>{ const p = presetRange(b.dataset.p); b.classList.toggle('on', !!p && p[0]===r.start && p[1]===r.end); });
+}
+function setPreset(p){ const r = presetRange(p); if(!r) return; [txFrom, txTo] = r; refreshTaxas(); }
+let dateT;
+function onDateInput(){
+  clearTimeout(dateT);
+  dateT = setTimeout(()=>{
+    let a = $('tx-from').value, b = $('tx-to').value;
+    if(!a || !b || a < '2020-01-01' || b < '2020-01-01' || a > '2100-01-01' || b > '2100-01-01') return;
+    if(a > b) [a,b] = [b,a];
+    txFrom = a; txTo = b; refreshTaxas();
+  }, 600);
+}
+function calMonth(){
   const m = monthIdx(), y = +selYear;
   if(m<0 || !y) return null;
   const last = new Date(y, m+1, 0).getDate();
@@ -583,18 +654,65 @@ function fmtMin(v){
   const h = Math.floor(v/60), m = Math.round(v%60);
   return h+'h'+(m? pad2(m):'');
 }
-function saleRows(){ return monthRows(); }
 const sumRows = rows => rows.reduce((t,r)=>t+parseBRL(r[CFG.C_VALUE]),0);
+const colOf = re => Object.keys(salesData[0]||{}).find(k=>re.test(k));
+const isLtv = r => r.__t==='ltv';
+/* Cada linha da planilha recebe:
+   __t tipo: ltv (coluna "É UM LTV" = Sim), consulta (Serviço com "Consulta"), recorrente (Serviço "Recorrente")
+             ou contrato (todo o resto, inclusive Serviço em branco);
+   __d data de recebimento em AAAA-MM-DD (se faltar, a de fechamento; se não bater com MES/ANO, fica dentro do mês da planilha);
+   __c chave do cliente, para contar contratos por cliente (entrada e parcelas contam uma vez). */
+function parseSheetDate(s, mi){
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(String(s||''));
+  if(!m) return null;
+  const a = +m[1], b = +m[2], y = +m[3];
+  let mo, d;
+  if(a>12){ d=a; mo=b; }
+  else if(b>12){ mo=a; d=b; }
+  else if(mi && b===mi && a!==mi){ mo=b; d=a; }
+  else { mo=a; d=b; }
+  if(mo<1 || mo>12 || d<1 || d>31) return null;
+  return {y, mo, d};
+}
+function annotateSales(data){
+  const keys = Object.keys(data[0]||{});
+  const kS = keys.find(k=>/^Servi/i.test(k)), kR = keys.find(k=>/^Data recebimento/i.test(k)),
+        kF = keys.find(k=>/^Data fechamento/i.test(k)), kN = keys.find(k=>/^NOME/i.test(k)), kL = keys.find(k=>/ltv/i.test(k));
+  data.forEach((r,i)=>{
+    const svc = String((kS&&r[kS])||'');
+    const ltv = !!kL && /^\s*(sim|s|x|1|true)\s*$/i.test(String(r[kL]||''));
+    r.__t = ltv ? 'ltv' : /consulta/i.test(svc) ? 'consulta' : /recorrent/i.test(svc) ? 'recorrente' : 'contrato';
+    r.__c = plain(String((kN&&r[kN])||'')).replace(/\s+/g,' ') || ('#'+i);
+    const mi = PT_MONTHS.findIndex(m=>m.toLowerCase()===String(r[CFG.C_MONTH]||'').trim().toLowerCase())+1;
+    const yy = +String(r[CFG.C_YEAR]||'').trim() || 0;
+    const cands = [kR,kF].map(k=>k?parseSheetDate(r[k],mi):null).filter(Boolean);
+    let d = (mi && yy) ? cands.find(c=>c.mo===mi && c.y===yy) : null;
+    if(!d && mi && yy){ const c = cands[0]; d = {y:yy, mo:mi, d:Math.min(c?c.d:1, new Date(yy,mi,0).getDate())}; }
+    if(!d) d = cands[0] || null;
+    r.__d = d ? `${d.y}-${pad2(d.mo)}-${pad2(d.d)}` : '';
+  });
+}
+function saleRows(){   // vendas do período da aba Taxas
+  const r = monthRange(); if(!r) return [];
+  return salesData.filter(x=>x.__d && x.__d>=r.start && x.__d<=r.end && parseBRL(x[CFG.C_VALUE])!==0);
+}
 function salesFor(name, cols){
   const rows = saleRows().filter(r=>cols.some(c=>norm(r[c])===name));
   return {count: rows.length, value: sumRows(rows), rows};
 }
-const colOf = re => Object.keys(salesData[0]||{}).find(k=>re.test(k));
-const isLtv = r => { const k = colOf(/ltv/i); return !!k && /^\s*(sim|s|x|1|true)\s*$/i.test(String(r[k]||'')); };
-function ticketOf(rows){
-  const sem = rows.filter(r=>!isLtv(r));
-  return {all: rows.length ? sumRows(rows)/rows.length : null, sem: sem.length ? sumRows(sem)/sem.length : null, nSem: sem.length};
+/* Contratos e LTV contam clientes diferentes; consultas e recorrentes contam pagamentos.
+   tot = contratos + consultas + recorrentes (sem LTV). grand = tudo, com LTV. */
+function salesStats(rows){
+  const by = {contrato:[], consulta:[], recorrente:[], ltv:[]};
+  rows.forEach(r=>by[r.__t||'contrato'].push(r));
+  const div = (v,n)=> n ? v/n : null;
+  const grp = list => { const n = new Set(list.map(r=>r.__c)).size, v = sumRows(list); return {n, pag:list.length, v, tk:div(v,n)}; };
+  const pay = list => { const v = sumRows(list); return {n:list.length, pag:list.length, v, tk:div(v,list.length)}; };
+  const ct = grp(by.contrato), cq = pay(by.consulta), rc = pay(by.recorrente), lt = grp(by.ltv);
+  const tn = ct.n+cq.n+rc.n, tv = ct.v+cq.v+rc.v;
+  return {ct, cq, rc, lt, tot:{n:tn, v:tv, tk:div(tv,tn)}, grand:{v:tv+lt.v}, rows, ltvRows:by.ltv};
 }
+const TIPO_CHIP = {contrato:['cl','Contrato'], consulta:['q','Consulta'], recorrente:['rc','Recorrente'], ltv:['ltv','LTV']};
 const fmtBRLn = v => (v===null || v===undefined || isNaN(v)) ? '—' : fmtBRL(v);
 const bookDate = m => m.bookingDate || (m.createdAt ? String(m.createdAt).slice(0,10) : '') || m.date;
 function agendadasBy(name){
@@ -644,18 +762,18 @@ function buildTaxas(){
     .filter(n=>!CFG.CLOSERS.includes(n) || agendadasBy(n)>0)
     .filter(n=>CFG.SDRS.includes(n) || CFG.SOCIAL_SELLERS.includes(n) || agendadasBy(n)>0 || (clintFor(n)&&clintFor(n).leads>0));
   const sdr = names.map(n=>{
-    const v = salesFor(n,[CFG.C_SDR,CFG.C_SOCIAL]), c = clintFor(n);
+    const v = salesFor(n,[CFG.C_SDR,CFG.C_SOCIAL]), c = clintFor(n), ss = salesStats(v.rows);
     const leads = clintOk && c ? c.leads : null, ag = agendadasBy(n);
     return {name:n, role:ROLES[n]||(CFG.SOCIAL_SELLERS.includes(n)?'Social Seller':'SDR'),
-      leads, ag, vendas:v.count, valor:v.value, rows:v.rows, tk:ticketOf(v.rows), st:schedStats(n),
-      cLA: leads===null?null:pct(ag,leads), cLV: leads===null?null:pct(v.count,leads), cAV: pct(v.count,ag),
+      leads, ag, vendas:ss.ct.n, valor:ss.grand.v, rows:v.rows, ss, st:schedStats(n),
+      cLA: leads===null?null:pct(ag,leads), cLV: leads===null?null:pct(ss.ct.n,leads), cAV: pct(ss.ct.n,ag),
       lpd: c?c.leadsPerDay:null, at: atendFor(c), resp: c?c.avgResponseMin:null, respMed: c?c.medianResponseMin:null, respN: c?c.respCount:0};
   }).sort((a,b)=>b.valor-a.valor||b.ag-a.ag||a.name.localeCompare(b.name));
   // Closers
   const cNames = [...new Set([...CFG.CLOSERS, ...meetings.filter(m=>inMonthStr(m.date)&&m.closer).map(m=>norm(m.closer))])];
   const closers = cNames.map(n=>{
-    const v = salesFor(n,[CFG.C_CLOSER]), c = clintFor(n), real = realizadasBy(n);
-    return {name:n, neg: clintOk&&c?c.leads:null, real, vendas:v.count, valor:v.value, rows:v.rows, tk:ticketOf(v.rows), st:closerStats(n), cRV: pct(v.count,real),
+    const v = salesFor(n,[CFG.C_CLOSER]), c = clintFor(n), real = realizadasBy(n), ss = salesStats(v.rows);
+    return {name:n, neg: clintOk&&c?c.leads:null, real, vendas:ss.ct.n, valor:ss.grand.v, rows:v.rows, ss, st:closerStats(n), cRV: pct(ss.ct.n,real),
       lpd: c?c.leadsPerDay:null, at: atendFor(c)};
   }).sort((a,b)=>b.valor-a.valor||b.real-a.real||a.name.localeCompare(b.name));
   return {sdr, closers};
@@ -669,7 +787,7 @@ function atTot(rows){
 function sumK(a,k){ return a.reduce((t,x)=>t+(x[k]||0),0); }
 let txTab = /^#taxas\/./.test(location.hash) ? '?' : 'geral';
 const txKeyOf = (kind,name) => kind+':'+name;
-const txHash = () => txTab==='geral' ? '#taxas' : '#taxas/'+txTab.replace(':','-').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const txHash = () => txTab==='geral' ? '#taxas' : txTab==='?' ? location.hash : '#taxas/'+txTab.replace(':','-').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function setTxTab(k){
   txTab = k;
   try{ history.replaceState(null,'', txHash()); }catch(e){}
@@ -685,17 +803,18 @@ function stSub(st){
 }
 function salesTable(rows){
   if(!rows.length) return '<div class="msg">Nenhuma venda neste período.</div>';
-  const kc = colOf(/^NOME/i), ks = colOf(/^Servi/i), kd = colOf(/^Data fechamento/i);
+  const kc = colOf(/^NOME/i), ks = colOf(/^Servi/i);
   const sorted = rows.slice().sort((a,b)=>parseBRL(b[CFG.C_VALUE])-parseBRL(a[CFG.C_VALUE]));
   const th = c=>`<th>${c}</th>`;
-  return `<table class="tx sm"><thead><tr>${['Cliente','Serviço','Valor recebido','SDR / Social Seller','Closer','Fechamento'].map(th).join('')}</tr></thead><tbody>`
+  return `<table class="tx sm"><thead><tr>${['Cliente','Tipo','Serviço','Valor recebido','SDR / Social Seller','Closer','Recebimento'].map(th).join('')}</tr></thead><tbody>`
     + sorted.map(r=>{
       const sd = [r[CFG.C_SDR], r[CFG.C_SOCIAL]].map(x=>String(x||'').trim()).filter(Boolean).join(' / ');
-      return `<tr><td>${esc(String((kc&&r[kc])||'—').trim())}${isLtv(r)?'<span class="chip cl">LTV</span>':''}</td><td class="dim l">${esc(String((ks&&r[ks])||'—').trim())}</td><td class="val">${fmtBRL(parseBRL(r[CFG.C_VALUE]))}</td><td class="dim">${esc(sd||'—')}</td><td class="dim">${esc(String(r[CFG.C_CLOSER]||'—').trim())}</td><td class="dim">${esc(String((kd&&r[kd])||'—').trim())}</td></tr>`;
+      const [cc,cl] = TIPO_CHIP[r.__t||'contrato'];
+      return `<tr><td>${esc(String((kc&&r[kc])||'—').trim())}</td><td class="l"><span class="chip ${cc}">${cl}</span></td><td class="dim l">${esc(String((ks&&r[ks])||'—').trim())}</td><td class="val">${fmtBRL(parseBRL(r[CFG.C_VALUE]))}</td><td class="dim">${esc(sd||'—')}</td><td class="dim">${esc(String(r[CFG.C_CLOSER]||'—').trim())}</td><td class="dim">${r.__d?fmtDMY(r.__d):'—'}</td></tr>`;
     }).join('') + '</tbody></table>';
 }
 function dayChart(c){
-  if(!c || !atendState.byUser) return `<div class="msg">${atendState.status==='loading'?'Calculando os atendimentos…':'Sem dados de atendimento.'}</div>`;
+  if(!c || !atendState.byUser) return `<div class="msg">${atendState.status==='loading'?'Calculando os atendimentos…':atendState.status==='skip'?'O gráfico diário aparece para períodos de até 62 dias.':'Sem dados de atendimento.'}</div>`;
   const r = monthRange(); if(!r) return '';
   const by = atendState.byUser[c.id] || {};
   const today = new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
@@ -708,53 +827,99 @@ function dayChart(c){
     return `<div class="col${wk===0||wk===6?' we':''}" title="${k.slice(8)}/${k.slice(5,7)}: ${pre}${Math.round(v)} conversas atendidas"><b>${v?pre+Math.round(v):''}</b><i style="height:${h}vh"></i><span>${k.slice(8)}</span></div>`;
   }).join('') + '</div>';
 }
+const nct = n => n+(n===1?' contrato':' contratos');
+function compTable(ss){
+  const th = (...c)=>'<tr>'+c.map(x=>`<th>${x}</th>`).join('')+'</tr>';
+  const cell = (v,cls)=>`<td${cls?` class="${cls}"`:''}>${v}</td>`;
+  const line = (chip, lbl, x, unit)=>`<tr><td><span class="chip ${chip}">${lbl}</span></td>${cell(x.n+'<small>'+unit+'</small>')}${cell(fmtBRL(x.v),'val')}${cell(fmtPct(pct(x.v, ss.grand.v)),'dim')}${cell(fmtBRLn(x.tk),'val')}</tr>`;
+  return `<table class="tx sm"><thead>${th('Tipo','Quantidade','Valor recebido','% do valor','Ticket médio')}</thead><tbody>`
+    + line('cl','Contratos novos',ss.ct,'clientes') + line('q','Consultas',ss.cq,'consultas') + line('rc','Recorrentes',ss.rc,'pagamentos')
+    + `<tr class="tot"><td>Contratos + consultas + recorrentes</td>${cell(ss.tot.n)}${cell(fmtBRL(ss.tot.v))}${cell(fmtPct(pct(ss.tot.v, ss.grand.v)))}${cell(fmtBRLn(ss.tot.tk))}</tr>`
+    + line('ltv','LTV (aba separada)',ss.lt,'clientes')
+    + `<tr class="tot"><td>Total geral (com LTV)</td>${cell('')}${cell(fmtBRL(ss.grand.v))}${cell('100%')}${cell('')}</tr></tbody></table>`;
+}
 function renderPessoa(r, kind, ctx){
   const c = clintFor(r.name), clintOk = ctx.clintOk, pre = atendState.partial ? '~' : '';
-  const a = r.at, st = r.st;
+  const a = r.at, st = r.st, ss = r.ss;
   const atV = a ? `${pre}${fmtDec(a.avg)}` : (atendState.status==='loading' ? '…' : '—');
   const atS = a ? `${pre}${Math.round(a.total)} conversas-dia · pico de ${a.peak} em um dia · ${a.active} dias com atendimento` : 'conversas diferentes respondidas por dia';
   const respV = r.respN ? fmtMin(r.respMed) : '—';
   const respS = r.respN ? `média ${fmtMin(r.resp)} · amostra de ${r.respN} conversas` : 'sem amostra de respostas';
-  const tk = r.tk;
-  const tkS = `sem LTV: ${fmtBRLn(tk.sem)} (${nv(tk.nSem)})`;
+  const tkS = `com consultas e recorrentes: ${fmtBRLn(ss.tot.tk)} (${nv(ss.tot.n)})`;
+  const ctS = ss.ct.n ? 'clientes diferentes com contrato novo' : 'nenhum contrato novo no período';
+  const tipos = [
+    kpi('Consultas', ss.cq.n, `${fmtBRL(ss.cq.v)} · ticket ${fmtBRLn(ss.cq.tk)}`, false),
+    kpi('Recorrentes', ss.rc.n, `${fmtBRL(ss.rc.v)} · ticket ${fmtBRLn(ss.rc.tk)} · pagamentos`, false),
+    kpi('LTV (aba separada)', ss.lt.n, `${fmtBRL(ss.lt.v)} · ticket ${fmtBRLn(ss.lt.tk)}`, false),
+  ];
   let cards;
   if(kind==='sdr'){
     cards = [
       kpi('Leads (Clint)', fmtNum(r.leads), r.lpd!=null ? fmtDec(r.lpd)+' por dia' : '', false),
-      kpi('Agendadas', r.ag, 'reuniões marcadas no mês', false),
+      kpi('Agendadas', r.ag, 'reuniões marcadas no período', false),
       kpi('Taxa de agendamento', fmtPct(r.cLA), 'agendadas ÷ leads', true),
       kpi('Comparecimento', fmtPct(st.show), stSub(st), false),
-      kpi('Vendas', r.vendas, 'linhas da planilha no mês', false),
-      kpi('Conversão (leads → vendas)', fmtPct(r.cLV), 'vendas ÷ leads', true),
-      kpi('Agendadas → vendas', fmtPct(r.cAV), 'vendas ÷ agendadas', false),
-      kpi('Valor recebido', fmtBRL(r.valor), fmtPct(pct(r.valor, ctx.tval))+' do valor do time SDR e Social Seller', true),
-      kpi('Ticket médio', fmtBRLn(tk.all), tkS, true),
+      kpi('Contratos novos', ss.ct.n, ctS, false),
+      kpi('Conversão (leads → contratos)', fmtPct(r.cLV), 'contratos ÷ leads, sem consultas, recorrentes e LTV', true),
+      kpi('Agendadas → contratos', fmtPct(r.cAV), 'contratos ÷ agendadas', false),
+      kpi('Valor recebido', fmtBRL(ss.grand.v), fmtPct(pct(ss.grand.v, ctx.tval))+' do valor do time SDR e Social Seller (todos os tipos)', true),
+      kpi('Valor em contratos', fmtBRL(ss.ct.v), fmtPct(pct(ss.ct.v, ss.grand.v))+' do valor recebido', false),
+      kpi('Ticket médio (contratos)', fmtBRLn(ss.ct.tk), tkS, true),
+    ].concat(tipos, [
       kpi('Atendimentos/dia', atV, atS, false),
       kpi('Tempo de resposta (mediana)', respV, respS, false),
-    ];
+    ]);
   }else{
     cards = [
       kpi('Negócios (Clint)', fmtNum(r.neg), r.lpd!=null ? fmtDec(r.lpd)+' por dia' : '', false),
-      kpi('Reuniões do mês', st.total, 'reuniões marcadas para o mês com este closer', false),
-      kpi('Realizadas', r.real, 'status realizado no mês', true),
+      kpi('Reuniões do período', st.total, 'reuniões marcadas para o período com este closer', false),
+      kpi('Realizadas', r.real, 'status realizado no período', true),
       kpi('Comparecimento', fmtPct(st.show), stSub(st), false),
-      kpi('Vendas', r.vendas, 'linhas da planilha no mês', false),
-      kpi('Realizadas → vendas', fmtPct(r.cRV), 'vendas ÷ realizadas', true),
-      kpi('Valor recebido', fmtBRL(r.valor), fmtPct(pct(r.valor, ctx.tcval))+' do valor dos closers', true),
-      kpi('Ticket médio', fmtBRLn(tk.all), tkS, true),
+      kpi('Contratos novos', ss.ct.n, ctS, false),
+      kpi('Realizadas → contratos', fmtPct(r.cRV), 'contratos ÷ realizadas', true),
+      kpi('Valor recebido', fmtBRL(ss.grand.v), fmtPct(pct(ss.grand.v, ctx.tcval))+' do valor dos closers (todos os tipos)', true),
+      kpi('Valor em contratos', fmtBRL(ss.ct.v), fmtPct(pct(ss.ct.v, ss.grand.v))+' do valor recebido', false),
+      kpi('Ticket médio (contratos)', fmtBRLn(ss.ct.tk), tkS, true),
+    ].concat(tipos, [
       kpi('Atendimentos/dia', atV, atS, false),
-    ];
+    ]);
   }
-  const head = `<div class="tx-box"><div class="box-hd"><div class="box-t">${avatarMini(r.name)} ${esc(r.name)} <span class="chip ${kind==='sdr'?(r.role==='SDR'?'sdr':'ss'):'cl'}">${kind==='sdr'?r.role:'Closer'}</span></div><div class="box-s">${esc(selMonth)} ${esc(selYear)}</div></div>`
+  const head = `<div class="tx-box"><div class="box-hd"><div class="box-t">${avatarMini(r.name)} ${esc(r.name)} <span class="chip ${kind==='sdr'?(r.role==='SDR'?'sdr':'ss'):'cl'}">${kind==='sdr'?r.role:'Closer'}</span></div><div class="box-s">${esc(periodLabel())}</div></div>`
     + (ctx.status ? `<div class="tx-note">${ctx.status}</div>` : '') + `<div class="kpis">${cards.join('')}</div></div>`;
   const chart = `<div class="tx-box"><div class="box-hd"><div class="box-t">💬 Conversas atendidas por dia</div><div class="box-s">${pre?'estimativa por amostragem':'contagem exata'}</div></div>`
     + `<div class="tx-note">Cada barra é o número de conversas diferentes que receberam pelo menos uma resposta humana naquele dia. Barras azuis são fins de semana.</div>${dayChart(c)}</div>`;
-  const vendas = `<div class="tx-box"><div class="box-hd"><div class="box-t">💰 Vendas do mês</div><div class="box-s">${r.vendas} ${r.vendas===1?'venda':'vendas'} · ${fmtBRL(r.valor)}</div></div>`
+  const vendas = `<div class="tx-box"><div class="box-hd"><div class="box-t">💰 Vendas do período</div><div class="box-s">${nct(ss.ct.n)} · ${ss.cq.n} ${ss.cq.n===1?'consulta':'consultas'} · ${ss.rc.n} ${ss.rc.n===1?'recorrente':'recorrentes'} · ${ss.lt.n} LTV · ${fmtBRL(ss.grand.v)}</div></div>`
     + `<div class="tx-wrap">${salesTable(r.rows)}</div></div>`;
   return head + chart + vendas;
 }
+function ltvBy(rows, cols){
+  const m = {};
+  rows.forEach(r=>{ new Set(cols.map(c=>String(r[c]||'').trim()).filter(Boolean).map(norm)).forEach(n=>{ (m[n] = m[n]||[]).push(r); }); });
+  return Object.entries(m).map(([name,rs])=>({name, lt:salesStats(rs).lt})).sort((a,b)=>b.lt.v-a.lt.v||a.name.localeCompare(b.name));
+}
+function ltvTable(list){
+  if(!list.length) return '<div class="msg">Nenhum LTV neste período.</div>';
+  const th = c=>`<th>${c}</th>`;
+  return `<table class="tx sm"><thead><tr>${['Colaborador','Clientes','Valor recebido','Ticket médio'].map(th).join('')}</tr></thead><tbody>`
+    + list.map(x=>`<tr><td>${CFG.PHOTOS[x.name]?avatarMini(x.name):''}<span>${esc(x.name)}</span></td><td>${x.lt.n}</td><td class="val">${fmtBRL(x.lt.v)}</td><td class="val">${fmtBRLn(x.lt.tk)}</td></tr>`).join('')
+    + '</tbody></table>';
+}
+function renderLtv(sAll, status){
+  const lt = sAll.lt;
+  const cards = [
+    kpi('Clientes com LTV', lt.n, lt.pag!==lt.n ? `${lt.pag} pagamentos` : 'novos serviços de clientes antigos', true),
+    kpi('Valor recebido em LTV', fmtBRL(lt.v), fmtPct(pct(lt.v, sAll.grand.v))+' do valor recebido no período', true),
+    kpi('Ticket médio (LTV)', fmtBRLn(lt.tk), 'valor ÷ clientes com LTV', true),
+  ];
+  return `<div class="tx-box"><div class="box-hd"><div class="box-t">🔁 LTV</div><div class="box-s">${esc(periodLabel())}</div></div>`
+    + `<div class="tx-note">${status ? status+' ' : ''}Vendas marcadas com "Sim" na coluna "É UM LTV" da planilha (novos serviços para clientes que já eram do escritório). Elas ficam fora das conversões e do ticket médio de contratos novos.</div><div class="kpis">${cards.join('')}</div></div>`
+    + `<div class="tx-box"><div class="box-hd"><div class="box-t">📞 Por SDR e Social Seller</div></div><div class="tx-wrap">${ltvTable(ltvBy(sAll.ltvRows,[CFG.C_SDR,CFG.C_SOCIAL]))}</div></div>`
+    + `<div class="tx-box"><div class="box-hd"><div class="box-t">🏆 Por closer</div></div><div class="tx-wrap">${ltvTable(ltvBy(sAll.ltvRows,[CFG.C_CLOSER]))}</div></div>`
+    + `<div class="tx-box"><div class="box-hd"><div class="box-t">💰 Vendas LTV do período</div><div class="box-s">${fmtBRL(lt.v)}</div></div><div class="tx-wrap">${salesTable(sAll.ltvRows)}</div></div>`;
+}
 function renderTaxas(){
   if(!isTaxas()) return;
+  renderPeriodBar();
   const {sdr, closers} = buildTaxas();
   const clintOk = clintState.status==='ok';
   const th = (...c)=>'<tr>'+c.map(x=>`<th>${x}</th>`).join('')+'</tr>';
@@ -762,7 +927,7 @@ function renderTaxas(){
   const who = r=>`<td>${avatarMini(r.name)}<span>${esc(r.name)}</span>${r.role?`<span class="chip ${r.role==='SDR'?'sdr':'ss'}">${r.role}</span>`:''}</td>`;
 
   // abas
-  const tabs = [{key:'geral', html:'📊 Visão geral'}]
+  const tabs = [{key:'geral', html:'📊 Visão geral'}, {key:'ltv', html:'🔁 LTV'}]
     .concat(sdr.map(r=>({key:txKeyOf('sdr',r.name), html:`${avatarMini(r.name)}<span>${esc(r.name)}</span><span class="chip ${r.role==='SDR'?'sdr':'ss'}">${r.role}</span>`})))
     .concat(closers.map(r=>({key:txKeyOf('closer',r.name), html:`${avatarMini(r.name)}<span>${esc(r.name)}</span><span class="chip cl">Closer</span>`})));
   if(!tabs.some(t=>t.key===txTab)){
@@ -773,23 +938,28 @@ function renderTaxas(){
   $('tx-tabs').innerHTML = tabs.map(t=>`<button type="button" class="tx-tab${t.key===txTab?' on':''}" role="tab" aria-selected="${t.key===txTab}" data-tab="${esc(t.key)}">${t.html}</button>`).join('');
 
   const shown = new Set(sdr.map(r=>r.name));
-  const distinct = saleRows().filter(r=>shown.has(norm(r[CFG.C_SDR])) || shown.has(norm(r[CFG.C_SOCIAL])));
-  const tl = sumK(sdr,'leads'), ta = sumK(sdr,'ag'), tv = distinct.length, tval = sumRows(distinct);
-  const tn = sumK(closers,'neg'), tr = sumK(closers,'real'), tcv = sumK(closers,'vendas'), tcval = sumK(closers,'valor');
+  const allRows = saleRows(), sAll = salesStats(allRows);
+  const distinct = allRows.filter(r=>shown.has(norm(r[CFG.C_SDR])) || shown.has(norm(r[CFG.C_SOCIAL])));
+  const sTeam = salesStats(distinct);
+  const sCl = salesStats(closers.flatMap(r=>r.rows));
+  const tl = sumK(sdr,'leads'), ta = sumK(sdr,'ag'), tv = sTeam.ct.n, tval = sTeam.grand.v;
+  const tn = sumK(closers,'neg'), tr = sumK(closers,'real'), tcv = sCl.ct.n, tcval = sCl.grand.v;
 
   const cn = clintState.status==='loading' ? 'Consultando o Clint…'
     : clintState.status==='error' ? `<span class="err">⚠️ Clint: ${esc(clintState.error)}</span>` : '';
   const atNote = atendState.status==='error' ? ' ⚠️ Atendimentos: '+esc(atendState.error)
+    : atendState.status==='skip' ? ' Atendimentos por dia não são calculados para períodos acima de 62 dias.'
     : atendState.status==='loading' ? ' Calculando os atendimentos por dia, lendo as conversas ('+(atendState.progress||'0%')+'). Os valores com ~ são estimativas e se ajustam conforme a leitura avança.'
     : atendState.failed ? ' ⚠️ Algumas partes da leitura falharam; os atendimentos são uma estimativa (~).'
     : atendState.partial ? ' Atendimentos estimados por amostragem (~): foram lidas '+Math.round((atendState.sample||0)*100)+'% das conversas, escolhidas ao acaso (limite de requisições do Clint).' : '';
   const g = clintState.data && clintState.data.generatedAt ? ' Dados do Clint de '+new Date(clintState.data.generatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'.' : '';
-  $('tx-foot').textContent = 'As taxas cruzam períodos iguais (o mês selecionado), mas uma venda pode vir de um lead de mês anterior.'+g;
+  $('tx-foot').textContent = 'As taxas cruzam o mesmo período nas duas fontes, mas um contrato pode vir de um lead de período anterior. O período das vendas usa a data de recebimento da planilha.'+g;
 
-  const isGeral = txTab==='geral';
-  $('tx-geral').hidden = !isGeral;
-  $('tx-pessoa').hidden = isGeral;
-  if(!isGeral){
+  const tabNow = txTab;
+  $('tx-geral').hidden = tabNow!=='geral';
+  $('tx-pessoa').hidden = tabNow==='geral';
+  if(tabNow==='ltv'){ $('tx-pessoa').innerHTML = renderLtv(sAll, cn); return; }
+  if(tabNow!=='geral'){
     const [kind, ...rest] = txTab.split(':'), name = rest.join(':');
     const r = (kind==='sdr' ? sdr : closers).find(x=>x.name===name);
     $('tx-pessoa').innerHTML = r ? renderPessoa(r, kind, {clintOk, tval, tcval, status:(cn + (atNote ? ' '+atNote : '')).trim()}) : '<div class="msg">Sem dados para este colaborador.</div>';
@@ -797,52 +967,58 @@ function renderTaxas(){
   }
 
   // ── Visão geral: KPIs e funil
-  const allRows = saleRows(), allVal = sumRows(allRows), tkAll = ticketOf(allRows);
   const stAll = {total:0, realizado:0, noshow:0, cancelado:0, agendado:0};
   sdr.forEach(r=>Object.keys(stAll).forEach(k=>{ stAll[k] += r.st[k]; }));
   stAll.show = pct(stAll.realizado, stAll.realizado+stAll.noshow);
-  $('tx-s-geral').textContent = `${selMonth} ${selYear}`;
-  $('tx-n-geral').innerHTML = cn || ('Leads, agendadas e conversão consideram SDRs e Social Sellers. Valor recebido e ticket médio consideram todas as vendas do mês na planilha. Ticket médio = valor recebido ÷ número de vendas (linhas da planilha); o valor entre parênteses exclui as linhas marcadas como LTV.'+atNote);
+  $('tx-s-geral').textContent = periodLabel();
+  $('tx-n-geral').innerHTML = cn || ('Leads, agendadas e conversão consideram SDRs e Social Sellers. As vendas da planilha se dividem em contratos novos (inclusive Serviço em branco), consultas (Serviço "Consulta"), recorrentes (Serviço "Recorrente") e LTV (coluna "É UM LTV" = Sim, na aba LTV). Conversão e agendadas → contratos usam só contratos novos, contados por cliente (entrada e parcelas do mesmo cliente contam uma vez). Ticket médio (contratos) = valor dos contratos ÷ clientes com contrato. O ticket "com consultas e recorrentes" divide o valor de contratos, consultas e recorrentes pelo total de clientes com contrato, consultas e pagamentos recorrentes.'+atNote);
   $('tx-kpi-geral').innerHTML = [
     kpi('Leads (Clint)', clintOk?tl:'—', 'SDRs e Social Sellers', false),
     kpi('Taxa de agendamento', clintOk?fmtPct(pct(ta,tl)):'—', `${ta} agendadas ÷ ${clintOk?tl:'—'} leads`, true),
     kpi('Comparecimento', fmtPct(stAll.show), stSub(stAll), false),
-    kpi('Conversão geral', clintOk?fmtPct(pct(tv,tl)):'—', `${tv} vendas ÷ ${clintOk?tl:'—'} leads`, true),
-    kpi('Agendadas → vendas', fmtPct(pct(tv,ta)), `${tv} vendas ÷ ${ta} agendadas`, false),
-    kpi('Realizadas → vendas (closers)', fmtPct(pct(tcv,tr)), `${tcv} vendas ÷ ${tr} realizadas`, false),
-    kpi('Vendas no mês', allRows.length, `${tv} com SDR ou Social Seller · ${Math.max(0,allRows.length-tv)} sem`, false),
-    kpi('Valor recebido', fmtBRL(allVal), 'todas as vendas do mês', true),
-    kpi('Ticket médio', fmtBRLn(tkAll.all), `sem LTV: ${fmtBRLn(tkAll.sem)} (${nv(tkAll.nSem)})`, true),
+    kpi('Conversão geral', clintOk?fmtPct(pct(tv,tl)):'—', `${nct(tv)} ÷ ${clintOk?tl:'—'} leads`, true),
+    kpi('Agendadas → contratos', fmtPct(pct(tv,ta)), `${nct(tv)} ÷ ${ta} agendadas`, false),
+    kpi('Realizadas → contratos (closers)', fmtPct(pct(tcv,tr)), `${nct(tcv)} ÷ ${tr} realizadas`, false),
+    kpi('Contratos novos', sAll.ct.n, `${tv} com SDR ou Social Seller · ${Math.max(0,sAll.ct.n-tv)} sem`, false),
+    kpi('Valor recebido', fmtBRL(sAll.grand.v), 'contratos, consultas, recorrentes e LTV', true),
+    kpi('Valor em contratos', fmtBRL(sAll.ct.v), fmtPct(pct(sAll.ct.v, sAll.grand.v))+' do valor recebido', false),
+    kpi('Ticket médio (contratos)', fmtBRLn(sAll.ct.tk), `com consultas e recorrentes: ${fmtBRLn(sAll.tot.tk)} (${nv(sAll.tot.n)})`, true),
+    kpi('Consultas', sAll.cq.n, `${fmtBRL(sAll.cq.v)} · ticket ${fmtBRLn(sAll.cq.tk)}`, false),
+    kpi('Recorrentes', sAll.rc.n, `${fmtBRL(sAll.rc.v)} · ticket ${fmtBRLn(sAll.rc.tk)} · pagamentos`, false),
+    kpi('LTV (aba separada)', sAll.lt.n, `${fmtBRL(sAll.lt.v)} · ticket ${fmtBRLn(sAll.lt.tk)}`, false),
     kpi('Atendimentos/dia', atTot(sdr), 'SDRs e Social Sellers (conversas diferentes por dia)', false),
   ].join('');
   const steps = [];
   if(clintOk) steps.push({l:'Leads', v:tl, p:null});
   steps.push({l:'Agendadas', v:ta, p: clintOk ? pct(ta,tl) : null, ref:'dos leads'});
   steps.push({l:'Realizadas', v:stAll.realizado, p:pct(stAll.realizado,ta), ref:'das agendadas'});
-  steps.push({l:'Vendas', v:tv, p:pct(tv,stAll.realizado), ref:'das realizadas'});
+  steps.push({l:'Contratos', v:tv, p:pct(tv,stAll.realizado), ref:'das realizadas'});
   const base = Math.max(1, ...steps.map(x=>x.v));
   $('tx-funil').innerHTML = steps.map(x=>`<div class="fn-r"><div class="fn-l">${x.l}</div><div class="fn-b"><i style="width:${Math.max(.8, x.v/base*100)}%"></i></div><div class="fn-v">${x.v}${x.p!==null?`<small>${fmtPct(x.p)} ${x.ref}</small>`:''}</div></div>`).join('');
+  $('tx-comp').innerHTML = compTable(sAll);
 
   const tr1 = (r,kind)=>`<tr data-tab="${esc(txKeyOf(kind,r.name))}" title="Ver os KPIs de ${esc(r.name)}">`;
-  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Vendas','Leads → Agend.','Leads → Vendas','Agend. → Vendas','Valor recebido','Ticket médio','Leads/dia','Atendimentos/dia','Tempo de resposta (mediana · média)')}</thead><tbody>`
-    + sdr.map(r=>`${tr1(r,'sdr')}${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.vendas)}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtBRLn(r.tk.all),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
-    + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell(fmtBRLn(tv?tval/tv:null))}${cell('')}${cell(atTot(sdr))}${cell('')}</tr></tbody></table>`
+  $('tx-sdr').innerHTML = sdr.length ? `<table class="tx"><thead>${th('Colaborador','Leads (Clint)','Agendadas','Contratos','Consultas · Recorrentes','Leads → Agend.','Leads → Contratos','Agend. → Contratos','Valor recebido','Valor em contratos','Ticket (contratos)','Ticket (com consultas e recorrentes)','Leads/dia','Atendimentos/dia','Tempo de resposta (mediana · média)')}</thead><tbody>`
+    + sdr.map(r=>`${tr1(r,'sdr')}${who(r)}${cell(fmtNum(r.leads),r.leads===null?'dim':'')}${cell(r.ag)}${cell(r.ss.ct.n)}${cell(r.ss.cq.n+' · '+r.ss.rc.n,'dim')}${cell(fmtPct(r.cLA))}${cell(fmtPct(r.cLV))}${cell(fmtPct(r.cAV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtBRL(r.ss.ct.v),'val')}${cell(fmtBRLn(r.ss.ct.tk),'val')}${cell(fmtBRLn(r.ss.tot.tk),'dim')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}${cell(r.respN? fmtMin(r.respMed)+' · '+fmtMin(r.resp) : '—','dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tl:'—')}${cell(ta)}${cell(tv)}${cell(sTeam.cq.n+' · '+sTeam.rc.n)}${cell(clintOk?fmtPct(pct(ta,tl)):'—')}${cell(clintOk?fmtPct(pct(tv,tl)):'—')}${cell(fmtPct(pct(tv,ta)))}${cell(fmtBRL(tval))}${cell(fmtBRL(sTeam.ct.v))}${cell(fmtBRLn(sTeam.ct.tk))}${cell(fmtBRLn(sTeam.tot.tk))}${cell('')}${cell(atTot(sdr))}${cell('')}</tr></tbody></table>`
     : '<div class="msg">Sem dados para este período.</div>';
 
-  $('tx-closer').innerHTML = closers.length ? `<table class="tx"><thead>${th('Closer','Negócios (Clint)','Reuniões realizadas','Vendas','Realizadas → Vendas','Valor recebido','Ticket médio','Negócios/dia','Atendimentos/dia')}</thead><tbody>`
-    + closers.map(r=>`${tr1(r,'closer')}${who({name:r.name})}${cell(fmtNum(r.neg),r.neg===null?'dim':'')}${cell(r.real)}${cell(r.vendas)}${cell(fmtPct(r.cRV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtBRLn(r.tk.all),'val')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}</tr>`).join('')
-    + `<tr class="tot"><td>Total</td>${cell(clintOk?tn:'—')}${cell(tr)}${cell(tcv)}${cell(fmtPct(pct(tcv,tr)))}${cell(fmtBRL(tcval))}${cell(fmtBRLn(tcv?tcval/tcv:null))}${cell('')}${cell(atTot(closers))}</tr></tbody></table>`
+  $('tx-closer').innerHTML = closers.length ? `<table class="tx"><thead>${th('Closer','Negócios (Clint)','Reuniões realizadas','Contratos','Consultas · Recorrentes','Realizadas → Contratos','Valor recebido','Valor em contratos','Ticket (contratos)','Ticket (com consultas e recorrentes)','Negócios/dia','Atendimentos/dia')}</thead><tbody>`
+    + closers.map(r=>`${tr1(r,'closer')}${who({name:r.name})}${cell(fmtNum(r.neg),r.neg===null?'dim':'')}${cell(r.real)}${cell(r.ss.ct.n)}${cell(r.ss.cq.n+' · '+r.ss.rc.n,'dim')}${cell(fmtPct(r.cRV))}${cell(fmtBRL(r.valor),'val')}${cell(fmtBRL(r.ss.ct.v),'val')}${cell(fmtBRLn(r.ss.ct.tk),'val')}${cell(fmtBRLn(r.ss.tot.tk),'dim')}${cell(fmtDec(r.lpd),'dim')}${cell(atCell(r.at),'dim')}</tr>`).join('')
+    + `<tr class="tot"><td>Total</td>${cell(clintOk?tn:'—')}${cell(tr)}${cell(tcv)}${cell(sCl.cq.n+' · '+sCl.rc.n)}${cell(fmtPct(pct(tcv,tr)))}${cell(fmtBRL(tcval))}${cell(fmtBRL(sCl.ct.v))}${cell(fmtBRLn(sCl.ct.tk))}${cell(fmtBRLn(sCl.tot.tk))}${cell('')}${cell(atTot(closers))}</tr></tbody></table>`
     : '<div class="msg">Sem dados para este período.</div>';
 
-  $('tx-s-sdr').innerHTML = `${selMonth} ${selYear}`;
-  $('tx-s-closer').innerHTML = `${selMonth} ${selYear}`;
+  $('tx-s-sdr').innerHTML = esc(periodLabel());
+  $('tx-s-closer').innerHTML = esc(periodLabel());
   const trunc = clintState.data && clintState.data.truncated ? ' ⚠️ O tempo de resposta foi calculado com parte da amostra (limite de tempo da consulta).' : '';
-  $('tx-n-sdr').innerHTML = cn || 'Clique em um colaborador para ver os KPIs dele. Leads: negócios criados no mês nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia). Vem da leitura das mensagens de todas as conversas, sem respostas automáticas.'+trunc+atNote+' Agendadas: reuniões marcadas no mês (dia do agendamento). Vendas e valor: planilha, mês da venda. Venda com SDR e Social Seller conta para os dois, e o total não duplica. Ticket médio: valor recebido ÷ vendas.';
-  $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no mês (dia da reunião). Vendas e valor: planilha, mês da venda. Ticket médio: valor recebido ÷ vendas.';
+  $('tx-n-sdr').innerHTML = cn || 'Clique em um colaborador para ver os KPIs dele. Leads: negócios criados no período nas origens VENDAS SDR, SOCIAL SELLER e CLOSER (Clint). Tempo de resposta: do 1º contato do lead até a 1ª resposta humana, 24h por dia, sem respostas automáticas, em amostra de até 40 conversas por pessoa. Atendimentos/dia: média de conversas diferentes que receberam resposta humana em cada dia do período (cada conversa conta uma vez por dia; entre parênteses, o total de conversas-dia).'+trunc+atNote+' Agendadas: reuniões marcadas no período (dia do agendamento). Contratos: clientes diferentes com contrato novo (sem consultas, recorrentes e LTV). Valor recebido: todos os tipos. Venda com SDR e Social Seller conta para os dois, e o total não duplica.';
+  $('tx-n-closer').innerHTML = cn || 'Realizadas: reuniões com status realizado no período (dia da reunião). Contratos, valores e tickets seguem as mesmas regras da tabela acima. A coluna Closer da planilha costuma ficar vazia nas consultas.';
 }
 async function loadAtend(force){
   const r = monthRange(); if(!r) return;
-  const key = r.start;
+  const key = pKey(r);
+  const spanDays = Math.round((Date.parse(r.end+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000)+1;
+  if(spanDays > 62){ atendState = {key, status:'skip', byUser:null, days:1, sample:0, error:'', progress:'', partial:false}; renderTaxas(); return; }
   const c = atendCache[key];
   if(!force && c && Date.now()-c.t < CLINT_TTL){ atendState = Object.assign({key, status:'ok', error:''}, c.data); renderTaxas(); return; }
   if(atendState.key===key && atendState.status==='loading') return;
@@ -886,7 +1062,7 @@ async function loadAtend(force){
     }
   };
   await Promise.all(Array.from({length:2}, async ()=>{
-    while(next < total){
+    while(next < total && atendState.key===key){
       const {g,i} = tasks[next++];
       try{
         const b = await getShard(g,i);
@@ -913,7 +1089,7 @@ async function loadAtend(force){
 }
 async function loadClint(force){
   const r = monthRange(); if(!r) return;
-  const key = r.start;
+  const key = pKey(r);
   const c = clintCache[key];
   if(!force && c && Date.now()-c.t < CLINT_TTL){ clintState = {key, status:'ok', data:c.data, error:''}; renderTaxas(); loadAtend(force); return; }
   if(clintState.key===key && clintState.status==='loading') return;
@@ -930,7 +1106,7 @@ async function loadClint(force){
   }
   renderTaxas();  loadAtend(force);
 }
-function refreshTaxas(){ if(isTaxas()){ renderTaxas(); const r=monthRange(); if(r && clintState.key!==r.start) loadClint(); } }
+function refreshTaxas(){ if(isTaxas()){ renderTaxas(); const r=monthRange(); if(r && clintState.key!==pKey(r)) loadClint(); } }
 function setView(v){
   document.body.dataset.view = v;
   $('vRank').classList.toggle('on', v!=='taxas'); $('vTax').classList.toggle('on', v==='taxas');
@@ -965,6 +1141,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('vTax').addEventListener('click',()=>setView('taxas'));
   $('tx-tabs').addEventListener('click',e=>{ const b = e.target.closest('[data-tab]'); if(b) setTxTab(b.dataset.tab); });
   $('tx-geral').addEventListener('click',e=>{ const b = e.target.closest('tr[data-tab]'); if(b) setTxTab(b.dataset.tab); });
+  $('tx-pre').addEventListener('click',e=>{ const b = e.target.closest('[data-p]'); if(b) setPreset(b.dataset.p); });
+  ['tx-from','tx-to'].forEach(id=>$(id).addEventListener('change',onDateInput));
   if(/^#taxas/.test(location.hash)) setView('taxas');
   // esconde o cursor após 4 s parado (modo TV); reaparece ao mexer o mouse
   let idleT; const wake=()=>{ document.body.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>document.body.classList.add('idle'),4000); };
